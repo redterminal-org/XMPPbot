@@ -23,16 +23,16 @@ from typing import Any
 
 import aiohttp
 
+from plugins import _core
 from plugins.rooms import JOINED_ROOMS
 from utils.command import Role, command
 from utils.config import config
-from plugins._core import handle_room_toggle_command
 
 log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "xkcd",
-    "version": "1.1.2",
+    "version": "1.2.0",
     "description": "XKCD comic fetcher and broadcaster with full indexing",
     "category": "fun",
     "requires": ["rooms", "_core"],
@@ -510,7 +510,7 @@ async def xkcd_command(bot, sender_jid, nick, args, msg, is_room):
 
     # on/off/status are room-management actions and must be restricted explicitly.
     # This now uses dict storage, consistent with the other room opt-in plugins.
-    if await handle_room_toggle_command(
+    if await _core.handle_room_toggle_command(
         bot,
         msg,
         is_room,
@@ -593,27 +593,18 @@ async def xkcd_command(bot, sender_jid, nick, args, msg, is_room):
         results.sort(key=lambda item: item["id"], reverse=True)
 
         per_page = 10
-        total_results = len(results)
-        total_pages = (total_results + per_page - 1) // per_page
-
-        if page > total_pages:
-            bot.reply(
-                msg,
-                f"❌ Page {page} does not exist.\n"
-                f"There {'is' if total_pages == 1 else 'are'} only {total_pages} "
-                f"page{'s' if total_pages != 1 else ''}.",
-            )
-            return
-
-        start = (page - 1) * per_page
-        end = start + per_page
-        page_results = results[start:end]
+        page_results, page, total_pages, total_results = _core.paginate_items(
+            results,
+            page,
+            per_page,
+        )
 
         msg_lines = [
             f"🔎 Found {total_results} results for '{query}' (page {page}/{total_pages}):"
         ]
 
-        for i, result in enumerate(page_results, start + 1):
+        start_index = (page - 1) * per_page
+        for i, result in enumerate(page_results, start_index + 1):
             msg_lines.append(f"{i}. #{result['id']}: {result['title']}")
             if result["alt"]:
                 alt_text = result["alt"][:80]

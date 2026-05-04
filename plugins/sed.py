@@ -25,25 +25,25 @@ import multiprocessing
 import queue
 import re
 import shlex
-from collections import defaultdict, deque
 from functools import partial
 
 from utils.command import command, Role
 from utils.config import config
 from plugins.rooms import JOINED_ROOMS
-from plugins._core import handle_room_toggle_command
+from plugins import _core
 
 log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "sed",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "description": "Message correction using sed-like syntax",
     "category": "tools",
     "requires": ["rooms", "_core"],
 }
 
 SED_KEY = "SED"
+CACHE_NAMESPACE = "sed"
 
 # Hard timeout for regex substitution.
 REGEX_TIMEOUT = 1.0
@@ -54,105 +54,21 @@ MAX_REPLACEMENT_LENGTH = 1000
 MAX_INPUT_LENGTH = 5000
 MAX_OUTPUT_LENGTH = 8000
 
-# Store only last 10 messages per room/DM.
-MESSAGE_CACHE = defaultdict(lambda: deque(maxlen=10))
-
-# Track processed messages to avoid duplicates.
-PROCESSED_STANZAS = set()
-PROCESSED_STANZA_ORDER = deque(maxlen=10000)
-
-
-# ============================================================================
-# MESSAGE CACHE / IDS
-# ============================================================================
-
-def get_stanza_id(msg):
-    """Extract a stable message id from a stanza."""
-    stanza_id = msg.get("stanza_id")
-    if stanza_id:
-        value = stanza_id.get("id")
-        if value:
-            return value
-
-    msg_id = msg.get("id")
-    if msg_id:
-        return str(msg_id)
-
-    return None
-
-
-def remember_stanza(stanza_id: str | None) -> bool:
-    """Return False if stanza was already processed."""
-    if not stanza_id:
-        return True
-
-    if stanza_id in PROCESSED_STANZAS:
-        return False
-
-    if len(PROCESSED_STANZA_ORDER) == PROCESSED_STANZA_ORDER.maxlen:
-        old = PROCESSED_STANZA_ORDER.popleft()
-        PROCESSED_STANZAS.discard(old)
-
-    PROCESSED_STANZAS.add(stanza_id)
-    PROCESSED_STANZA_ORDER.append(stanza_id)
-
-    return True
-
-
-def get_reply_target(msg):
-    """Get the ID of the message this is a reply to."""
-    if "reply" in msg:
-        reply = msg.get("reply")
-
-        if reply:
-            return reply.get("id")
-
-    return None
-
-
-def extract_reply_quote(body: str):
-    """Extract the original message from a reply quote."""
-    lines = body.strip().split("\n")
-    quoted_lines = []
-
-    for line in lines:
-        if line.startswith(">"):
-            quoted_lines.append(line[2:] if len(line) > 1 else "")
-        else:
-            break
-
-    return "\n".join(quoted_lines) if quoted_lines else None
-
-
-def cache_message(room: str, nick: str | None, body: str, stanza_id: str | None):
-    """Add message to cache."""
-    MESSAGE_CACHE[room].append(
-        {
-            "nick": nick,
-            "body": body,
-            "stanza_id": stanza_id,
-        }
-    )
-
 
 def get_last_message(room: str):
     """Get the last message from cache."""
-    if not MESSAGE_CACHE[room]:
+    entry = _core.get_last_cached_message(CACHE_NAMESPACE, room)
+    if not entry:
         return None
-
-    return MESSAGE_CACHE[room][-1]["body"]
+    return entry.get("body")
 
 
 def get_message_by_id(room: str, msg_id: str):
     """Get a message by stanza_id from cache."""
-    if not MESSAGE_CACHE[room]:
+    entry = _core.get_cached_message_by_id(CACHE_NAMESPACE, room, msg_id)
+    if not entry:
         return None
-
-    for msg_data in MESSAGE_CACHE[room]:
-        if msg_data["stanza_id"] == msg_id:
-            return msg_data["body"]
-
-    return None
+    return entry.get("body")
 
 
 def _room_key_from_msg(msg, is_room: bool) -> str:
@@ -470,13 +386,13 @@ async def process_sed_correction(
     last_msg = None
 
     if body.startswith(">"):
-        quoted_msg = extract_reply_quote(body)
+        quoted_msg = _core.extract_reply_quote(body)
 
         if quoted_msg:
             last_msg = quoted_msg
 
     if not last_msg and is_room:
-        reply_target_id = get_reply_target(msg)
+        reply_target_id = _core.get_reply_target(msg)
 
         if reply_target_id:
             last_msg = get_message_by_id(room, reply_target_id)
@@ -533,7 +449,7 @@ async def process_sed_correction(
 @command("sed", role=Role.USER)
 async def cmd_sed_handler(bot, sender_jid, nick, args, msg, is_room):
     """Handle sed corrections or enable/disable sed in a room."""
-    if await handle_room_toggle_command(
+    if await _core.handle_room_toggle_command(
         bot,
         msg,
         is_room,
@@ -580,9 +496,9 @@ async def on_message(bot, msg):
         if msg.get("from") == bot.boundjid:
             return
 
-        stanza_id = get_stanza_id(msg)
+        stanza_id = _core.get_stanza_id(msg)
 
-        if not remember_stanza(stanza_id):
+        if not _core.remember_stanza(CACHE_NAMESPACE, stanza_id):
             return
 
         is_room = msg.get("type") == "groupchat"
@@ -618,7 +534,14 @@ async def on_message(bot, msg):
             )
             return
 
-        cache_message(room, nick, body, stanza_id)
+        _core.cache_message(
+            CACHE_NAMESPACE,
+            room,
+            nick,
+            body,
+            stanza_id,
+            maxlen=10,
+        )
 
     except Exception as exc:
         log.exception("[SED] Error in on_message: %s", exc)
