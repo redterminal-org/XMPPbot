@@ -40,7 +40,7 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 > Internal shared helper plugin providing common utilities for other plugins, such as JID resolution, room permission checks, and room toggle helpers.
 
 ### **_reg_profile**
-> Bot profile initialization plugin. Publishes or updates the bot’s vCard and avatar on startup or reload, avoiding unnecessary network updates when nothing changed.
+> Bot profile initialization plugin. Publishes or updates the bot's vCard and avatar on startup or reload, avoiding unnecessary network updates when nothing changed.
 
 ### **birthday_notify**
 > Automatic birthday notification plugin for rooms. Announces birthdays for present users in opted-in rooms, with per-room enable/disable support and cached vCard birthday lookups.
@@ -82,7 +82,7 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 > Sed-style message correction plugin for fixing previous messages with regex or literal substitutions, with per-room enable/disable support.
 
 ### **status**
-> Bot presence/status plugin for viewing and changing the bot’s XMPP presence state and optional status message.
+> Bot presence/status plugin for viewing and changing the bot's XMPP presence state and optional status message.
 
 ### **tell**
 > Offline message plugin that stores messages for users and delivers them when they join the room again.
@@ -100,7 +100,7 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 > vCard lookup and profile plugin for retrieving public user profile information such as names, birthdays, URLs, organization, and location-related fields.
 
 ### **weather**
-> Weather plugin that shows current weather for a user’s configured vCard location, usable in rooms, MUC DMs, or direct messages.
+> Weather plugin that shows current weather for a user's configured vCard location, usable in rooms, MUC DMs, or direct messages.
 
 ### **xkcd**
 > XKCD plugin that fetches latest, specific, random, or searched comics and can automatically post new comics to subscribed rooms.
