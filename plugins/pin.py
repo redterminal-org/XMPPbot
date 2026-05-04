@@ -24,7 +24,6 @@ from __future__ import annotations
 import html
 import logging
 import time
-from collections import defaultdict, deque
 from functools import partial
 from typing import Any
 
@@ -37,7 +36,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "pin",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Pin room messages with paging and non-reply fallback.",
     "category": "utility",
     "requires": ["rooms", "_core"],
@@ -48,10 +47,7 @@ PIN_DATA_KEY = "PIN_DATA"
 
 PINS_FIELD = "pins"
 PAGE_SIZE = 10
-
-MESSAGE_CACHE = defaultdict(lambda: deque(maxlen=80))
-PROCESSED_STANZAS = set()
-PROCESSED_STANZA_ORDER = deque(maxlen=10000)
+CACHE_NAMESPACE = "pin"
 
 
 async def get_pin_store(bot):
@@ -116,36 +112,6 @@ def _room_key_from_msg(msg, is_room: bool) -> str | None:
         pass
 
     return None
-
-
-def _get_reply_target(msg) -> str | None:
-    try:
-        if "reply" in msg:
-            reply = msg.get("reply")
-            if reply:
-                value = reply.get("id")
-                if value:
-                    return str(value)
-    except Exception:
-        pass
-    return None
-
-
-def _extract_reply_quote(body: str) -> str | None:
-    if not body:
-        return None
-
-    lines = body.strip().splitlines()
-    quoted = []
-
-    for line in lines:
-        if line.startswith(">"):
-            quoted.append(line[2:] if len(line) > 1 else "")
-        else:
-            break
-
-    text = "\n".join(quoted).strip()
-    return text or None
 
 
 def _body_without_quote(body: str) -> str:
@@ -241,15 +207,6 @@ async def _is_enabled_for_room(bot, room_jid: str) -> bool:
     return bool(enabled.get(room_jid))
 
 
-def _paginate(items: list[Any], page: int, page_size: int = PAGE_SIZE):
-    total = len(items)
-    total_pages = max(1, (total + page_size - 1) // page_size)
-    page = max(1, min(page, total_pages))
-    start = (page - 1) * page_size
-    end = start + page_size
-    return items[start:end], page, total_pages, total
-
-
 def _format_timestamp(ts: int | float | None) -> str:
     if not ts:
         return "unknown"
@@ -306,64 +263,6 @@ def _next_free_pin_id(bucket: dict[str, Any]) -> int:
     return pin_id
 
 
-def _get_stanza_id(msg) -> str | None:
-    try:
-        stanza_id = msg.get("stanza_id")
-        if stanza_id:
-            value = stanza_id.get("id")
-            if value:
-                return str(value)
-    except Exception:
-        pass
-
-    try:
-        msg_id = msg.get("id")
-        if msg_id:
-            return str(msg_id)
-    except Exception:
-        pass
-
-    return None
-
-
-def _remember_stanza(stanza_id: str | None) -> bool:
-    if not stanza_id:
-        return True
-
-    if stanza_id in PROCESSED_STANZAS:
-        return False
-
-    if len(PROCESSED_STANZA_ORDER) == PROCESSED_STANZA_ORDER.maxlen:
-        old = PROCESSED_STANZA_ORDER.popleft()
-        PROCESSED_STANZAS.discard(old)
-
-    PROCESSED_STANZAS.add(stanza_id)
-    PROCESSED_STANZA_ORDER.append(stanza_id)
-    return True
-
-
-def _cache_message(room: str, nick: str | None, body: str, stanza_id: str | None):
-    MESSAGE_CACHE[room].append(
-        {
-            "nick": nick,
-            "body": body,
-            "stanza_id": stanza_id,
-            "ts": int(time.time()),
-        }
-    )
-
-
-def _get_message_by_id(room: str, msg_id: str):
-    if not MESSAGE_CACHE[room]:
-        return None
-
-    for msg_data in MESSAGE_CACHE[room]:
-        if msg_data["stanza_id"] == msg_id:
-            return msg_data
-
-    return None
-
-
 def _is_pin_command_message(body: str) -> bool:
     prefix = _prefix()
     stripped = body.strip().lower()
@@ -377,7 +276,7 @@ def _is_pin_add_command_body(body: str) -> bool:
 
 
 def _recent_cache_entries(room: str) -> list[dict[str, Any]]:
-    return list(MESSAGE_CACHE[room])
+    return _core.get_cached_messages(CACHE_NAMESPACE, room)
 
 
 def _get_recent_target(room: str, offset: int = 1) -> dict[str, Any] | None:
@@ -497,7 +396,7 @@ async def _handle_reply_pin_add(bot, msg):
         if not await _is_enabled_for_room(bot, room):
             return False
 
-        quote_text = _extract_reply_quote(body)
+        quote_text = _core.extract_reply_quote(body)
         if not quote_text:
             return False
 
@@ -505,7 +404,7 @@ async def _handle_reply_pin_add(bot, msg):
         if not _is_pin_add_command_body(cmd_body):
             return False
 
-        reply_id = _get_reply_target(msg)
+        reply_id = _core.get_reply_target(msg)
         cached_entry = None
         target_text = None
         target_nick = "unknown"
@@ -513,7 +412,7 @@ async def _handle_reply_pin_add(bot, msg):
         source = "quote"
 
         if reply_id:
-            cached_entry = _get_message_by_id(room, reply_id)
+            cached_entry = _core.get_cached_message_by_id(CACHE_NAMESPACE, room, reply_id)
             if cached_entry:
                 target_text = cached_entry.get("body")
                 target_nick = cached_entry.get("nick") or "unknown"
@@ -560,15 +459,23 @@ async def _on_groupchat_message(bot, msg):
         if room not in JOINED_ROOMS:
             return
 
-        stanza_id = _get_stanza_id(msg)
-        if not _remember_stanza(stanza_id):
+        stanza_id = _core.get_stanza_id(msg)
+        if not _core.remember_stanza(CACHE_NAMESPACE, stanza_id):
             return
 
         if _is_pin_command_message(body):
             return
 
         actor_nick = msg.get("mucnick") or msg["from"].resource or "unknown"
-        _cache_message(room, actor_nick, body, stanza_id)
+        _core.cache_message(
+            CACHE_NAMESPACE,
+            room,
+            actor_nick,
+            body,
+            stanza_id,
+            maxlen=80,
+            extra={"ts": int(time.time())},
+        )
 
     except Exception:
         log.exception("[PIN] Error in groupchat message cache handler")
@@ -631,7 +538,7 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
             bot.reply(msg, "📌 No pinned messages stored for this room.", mention=False)
             return
 
-        page_items, page, total_pages, total = _paginate(pins, page, PAGE_SIZE)
+        page_items, page, total_pages, total = _core.paginate_items(pins, page, PAGE_SIZE)
 
         lines = [f"📌 Pins for {room} ({total}) - Page {page}/{total_pages}", ""]
         lines.extend(_format_pin_line(entry) for entry in page_items)
