@@ -24,6 +24,7 @@ import logging
 import multiprocessing
 import queue
 import re
+import shlex
 from collections import defaultdict, deque
 from functools import partial
 
@@ -36,7 +37,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "sed",
-    "version": "0.3.3",
+    "version": "0.4.0",
     "description": "Message correction using sed-like syntax",
     "category": "tools",
     "requires": ["rooms", "_core"],
@@ -226,58 +227,84 @@ def _command_prefix() -> str:
     return config.get("prefix", ",")
 
 
+def parse_prefixed_sed_command(text: str):
+    """Parse '{prefix}sed <pattern> <replacement> [flags]' with shell-like quoting.
+
+    Examples:
+        ,sed foo bar
+        ,sed 'lat(.*)' ''
+        ,sed '++' '--' l
+        ,sed "\\+\\+" -- g
+    """
+    prefix = _command_prefix()
+    prefixed = f"{prefix}sed "
+
+    if not text.startswith(prefixed):
+        return None, None, None
+
+    rest = text[len(prefixed):].strip()
+
+    if not rest:
+        return None, None, None
+
+    try:
+        parts = shlex.split(rest)
+    except ValueError:
+        return None, None, None
+
+    if not parts:
+        return None, None, None
+
+    cmd = parts[0].lower()
+
+    if cmd in {"on", "off", "status"} and len(parts) == 1:
+        return None, None, None
+
+    if len(parts) < 2:
+        return None, None, None
+
+    pattern = parts[0]
+    replacement = parts[1]
+    flags_str = "".join(parts[2:]) if len(parts) > 2 else ""
+
+    return pattern, replacement, flags_str
+
+
+def parse_any_sed_command(body: str):
+    """Parse either inline sed syntax or prefixed sed syntax.
+
+    Ignores leading reply quote lines.
+    """
+    lines = body.strip().split("\n")
+
+    for line in lines:
+        if line.startswith(">"):
+            continue
+
+        stripped = line.strip()
+
+        if not stripped:
+            continue
+
+        pattern, replacement, flags_str = parse_sed_command(stripped)
+
+        if pattern is not None:
+            return pattern, replacement, flags_str
+
+        pattern, replacement, flags_str = parse_prefixed_sed_command(stripped)
+
+        if pattern is not None:
+            return pattern, replacement, flags_str
+
+        return None, None, None
+
+    return None, None, None
+
+
 def is_sed_command(body: str) -> bool:
     """Check if a message is a sed command, ignoring reply quotes."""
-    prefix = _command_prefix()
-    lines = body.strip().split("\n")
-
-    for line in lines:
-        if line.startswith(">"):
-            continue
-
-        stripped = line.strip()
-
-        if stripped.startswith("s") and len(stripped) > 2 and stripped[1] in ("/", "#"):
-            return True
-
-        prefixed = f"{prefix}sed "
-        if stripped.startswith(prefixed):
-            rest = stripped[len(prefixed):].strip()
-            parts = rest.split(None, 2)
-
-            if len(parts) >= 2 and parts[0].lower() not in {"on", "off", "status"}:
-                return True
-
-        return False
-
-    return False
-
-
-def extract_sed_command(body: str) -> str:
-    """Extract sed command from message body."""
-    prefix = _command_prefix()
-    lines = body.strip().split("\n")
-
-    for line in lines:
-        if line.startswith(">"):
-            continue
-
-        stripped = line.strip()
-
-        prefixed = f"{prefix}sed "
-        if stripped.startswith(prefixed):
-            rest = stripped[len(prefixed):].strip()
-            parts = rest.split(None, 2)
-
-            if len(parts) >= 2:
-                pattern = parts[0]
-                replacement = parts[1]
-                flags = parts[2] if len(parts) > 2 else ""
-                return f"s/{pattern}/{replacement}/{flags}"
-
-        return stripped
-
-    return body.strip()
+    pattern, replacement, flags_str = parse_any_sed_command(body)
+    return pattern is not None
 
 
 # ============================================================================
@@ -520,14 +547,16 @@ async def cmd_sed_handler(bot, sender_jid, nick, args, msg, is_room):
         return
 
     prefix = _command_prefix()
+    pattern, replacement, flags_str = parse_prefixed_sed_command(
+        msg.get("body", "").strip()
+    )
 
-    if not args or len(args) < 2:
-        bot.reply(msg, f"❌ Usage: {prefix}sed <pattern> <replacement> [flags]")
+    if pattern is None:
+        bot.reply(
+            msg,
+            f"❌ Usage: {prefix}sed <pattern> <replacement> [flags]",
+        )
         return
-
-    pattern = args[0]
-    replacement = args[1]
-    flags_str = args[2] if len(args) > 2 else ""
 
     await process_sed_correction(
         bot,
@@ -575,21 +604,18 @@ async def on_message(bot, msg):
             if bot_nick and bot_nick == nick:
                 return
 
-        if is_sed_command(body):
-            sed_cmd = extract_sed_command(body)
-            pattern, replacement, flags_str = parse_sed_command(sed_cmd)
+        pattern, replacement, flags_str = parse_any_sed_command(body)
 
-            if pattern is not None:
-                await process_sed_correction(
-                    bot,
-                    nick,
-                    msg,
-                    is_room,
-                    pattern,
-                    replacement,
-                    flags_str,
-                )
-
+        if pattern is not None:
+            await process_sed_correction(
+                bot,
+                nick,
+                msg,
+                is_room,
+                pattern,
+                replacement,
+                flags_str,
+            )
             return
 
         cache_message(room, nick, body, stanza_id)
