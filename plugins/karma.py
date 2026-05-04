@@ -13,15 +13,6 @@ Queries:
     {prefix}karma <nick>          - Show karma for a nick in this room
     {prefix}karma top             - Show top karma in this room
     {prefix}karma bottom          - Show lowest karma in this room
-
-Behavior:
-- Karma processing only works in public MUCs.
-- on/off/status only works in MUC private messages to the bot.
-- Karma is tracked per room.
-- Default should be OFF via plugins.rooms PLUGIN_DEFAULTS.
-- Self-karma is ignored.
-- Bot-karma is ignored.
-- Duplicate karma for the same nick in a single message is ignored.
 """
 
 import logging
@@ -40,7 +31,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "karma",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Room-local karma tracking with nick++ / nick--",
     "category": "fun",
     "requires": ["rooms", "_core"],
@@ -49,8 +40,8 @@ PLUGIN_META = {
 KARMA_ENABLED_KEY = "KARMA"
 KARMA_SCORES_KEY = "scores"
 
-KARMA_DELAY_SECONDS = 3
-LAST_KARMA_ACTIONS = {}  # room:key -> {"positive": ts, "negative": ts}
+KARMA_DELAY_SECONDS = 60
+LAST_KARMA_ACTIONS = {}  # room:actor -> {target_lower: timestamp}
 
 OP_RE = re.compile(r"(\+\+|--)")
 
@@ -227,7 +218,7 @@ def _extract_karma_events(body: str, room_jid: str) -> list[tuple[str, int]]:
     return events
 
 
-async def _throttle_key(bot, msg) -> str:
+async def _actor_throttle_key(bot, msg) -> str:
     room_jid = msg["from"].bare
     real_jid = await _resolve_real_jid(bot, msg)
 
@@ -238,19 +229,17 @@ async def _throttle_key(bot, msg) -> str:
     return f"{room_jid}:nick:{actor_nick.lower()}"
 
 
-async def _check_throttle(bot, msg, positive: bool) -> bool:
-    key = await _throttle_key(bot, msg)
+async def _check_throttle(bot, msg, target_nick: str) -> bool:
+    key = await _actor_throttle_key(bot, msg)
     entry = LAST_KARMA_ACTIONS.get(key, {})
-    field = "positive" if positive else "negative"
-    ts = entry.get(field)
+    ts = entry.get(target_nick.lower())
     return ts is None or (time.time() - ts) >= KARMA_DELAY_SECONDS
 
 
-async def _set_throttle(bot, msg, positive: bool):
-    key = await _throttle_key(bot, msg)
+async def _set_throttle(bot, msg, target_nick: str):
+    key = await _actor_throttle_key(bot, msg)
     entry = LAST_KARMA_ACTIONS.setdefault(key, {})
-    field = "positive" if positive else "negative"
-    entry[field] = time.time()
+    entry[target_nick.lower()] = time.time()
 
 
 @command("karma", role=Role.USER)
@@ -368,17 +357,6 @@ async def on_message(bot, msg):
         if not events:
             return
 
-        has_positive = any(delta > 0 for _, delta in events)
-        has_negative = any(delta < 0 for _, delta in events)
-
-        positive_allowed = True
-        negative_allowed = True
-
-        if has_positive:
-            positive_allowed = await _check_throttle(bot, msg, True)
-        if has_negative:
-            negative_allowed = await _check_throttle(bot, msg, False)
-
         scores = await _get_room_scores(bot, room_jid)
         changed = False
         seen_targets = set()
@@ -396,11 +374,8 @@ async def on_message(bot, msg):
             if target_lower == str(actor_nick).lower():
                 continue
 
-            positive = delta > 0
-            if positive and not positive_allowed:
-                throttle_hit = True
-                continue
-            if not positive and not negative_allowed:
+            allowed = await _check_throttle(bot, msg, target_nick)
+            if not allowed:
                 throttle_hit = True
                 continue
 
@@ -408,6 +383,8 @@ async def on_message(bot, msg):
             key = current_key or target_nick
             scores[key] = int(current_score) + delta
             changed = True
+
+            await _set_throttle(bot, msg, key)
 
             sign = "+1" if delta > 0 else "-1"
             icon = "📈" if delta > 0 else "📉"
@@ -427,16 +404,11 @@ async def on_message(bot, msg):
         if changed:
             await _set_room_scores(bot, room_jid, scores)
 
-            if has_positive and positive_allowed:
-                await _set_throttle(bot, msg, True)
-            if has_negative and negative_allowed:
-                await _set_throttle(bot, msg, False)
-
         if response_lines:
             _karma_reply(bot, msg, "\n".join(response_lines))
 
         if throttle_hit and not response_lines:
-            _karma_reply(bot, msg, "⏱️ Try again in a couple of seconds.")
+            _karma_reply(bot, msg, "⏱️ You recently gave karma to that user. Try again later.")
 
     except Exception:
         log.exception("[KARMA] Error in on_message")
