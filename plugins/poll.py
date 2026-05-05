@@ -43,7 +43,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "poll",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Room polls with voting, history and auto-close",
     "category": "utility",
     "requires": ["rooms", "_core"],
@@ -370,25 +370,8 @@ async def _is_room_moderator_or_admin(bot, msg, is_room: bool) -> bool:
         return False
 
     room_jid = msg["from"].bare
-    nick = msg.get("mucnick") or msg["from"].resource
-
-    occupant = JOINED_ROOMS.get(room_jid, {}).get("nicks", {}).get(nick)
-    if not occupant:
-        return False
-
-    affiliation = str(occupant.get("affiliation") or "").lower()
-    if affiliation in {"admin", "owner"}:
-        return True
-
-    real_jid = occupant.get("jid")
-    if real_jid:
-        try:
-            role = await bot.get_user_role(str(real_jid), room_jid)
-            return role <= Role.MODERATOR
-        except Exception:
-            log.exception("[POLL] Failed to resolve room role")
-
-    return False
+    nick = msg.get("mucnick") or msg["from"].resource or ""
+    return await _core.is_room_moderator_or_admin(bot, room_jid, str(nick))
 
 
 async def _can_manage_poll(bot, msg, is_room: bool, poll: dict) -> bool:

@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "pin",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Pin room messages with paging and non-reply fallback.",
     "category": "utility",
     "requires": ["rooms", "_core"],
@@ -205,6 +205,14 @@ async def _enabled_rooms(bot) -> dict[str, bool]:
 async def _is_enabled_for_room(bot, room_jid: str) -> bool:
     enabled = await _enabled_rooms(bot)
     return bool(enabled.get(room_jid))
+
+
+async def _sender_can_manage_pins_in_room(bot, msg, room_jid: str) -> bool:
+    """
+    True if sender is moderator/admin/owner in this room (affiliation or role fallback).
+    """
+    nick = msg.get("mucnick") or msg["from"].resource or ""
+    return await _core.is_room_moderator_or_admin(bot, room_jid, str(nick))
 
 
 def _format_timestamp(ts: int | float | None) -> str:
@@ -394,6 +402,10 @@ async def _handle_reply_pin_add(bot, msg):
             return False
 
         if not await _is_enabled_for_room(bot, room):
+            return False
+
+        # permission guard for reply-based pin add
+        if not await _sender_can_manage_pins_in_room(bot, msg, room):
             return False
 
         quote_text = _core.extract_reply_quote(body)
@@ -600,6 +612,11 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
             bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
             return
 
+        # permission guard
+        if not await _sender_can_manage_pins_in_room(bot, msg, room):
+            bot.reply(msg, "⛔ Only room moderators/admins/owners can delete pins.", mention=False)
+            return
+
         if len(args) < 2:
             bot.reply(msg, f"❌ Usage: {_prefix()}pin delete <id>")
             return
@@ -638,6 +655,11 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
 
     if not await _is_enabled_for_room(bot, room):
         bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
+        return
+
+    # permission guard for manual add/add last
+    if not await _sender_can_manage_pins_in_room(bot, msg, room):
+        bot.reply(msg, "⛔ Only room moderators/admins/owners can add pins.", mention=False)
         return
 
     if len(args) >= 2 and str(args[1]).lower() == "last":
