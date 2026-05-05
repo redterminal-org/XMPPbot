@@ -395,6 +395,34 @@ def _get_muc_occupant(room_jid: str, nick: str) -> Optional[dict]:
     return room_data.get("nicks", {}).get(nick)
 
 
+async def is_room_moderator_or_admin(
+    bot,
+    room_jid: str,
+    nick: str,
+) -> bool:
+    """
+    True if the occupant is admin/owner by MUC affiliation OR is a moderator/admin
+    by the bot's room-scoped role mapping (fallback via real JID).
+    """
+    occupant = _get_muc_occupant(room_jid, nick)
+    if not occupant:
+        return False
+
+    affiliation = str(occupant.get("affiliation") or "").lower()
+    if affiliation in {"admin", "owner"}:
+        return True
+
+    real_jid = occupant.get("jid")
+    if real_jid:
+        try:
+            role = await bot.get_user_role(str(real_jid), room_jid)
+            return role <= Role.MODERATOR
+        except Exception:
+            log.exception("[CORE] Failed to resolve user room role")
+
+    return False
+
+
 async def muc_pm_sender_can_manage_room(
     bot,
     msg,
