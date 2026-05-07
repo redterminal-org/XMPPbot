@@ -22,9 +22,12 @@ import slixmpp
 import aiohttp
 import asyncio
 from utils.command import command, Role
-from plugins.rooms import JOINED_ROOMS
 from utils.config import config
-from plugins._core import handle_room_toggle_command
+from plugins._core import (
+        handle_room_toggle_command,
+        _is_muc_pm,
+        JOINED_ROOMS,
+)
 
 XMPP_KEY = "XMPP"
 
@@ -53,16 +56,6 @@ XMPP Utility Commands:
 
 async def get_xmpp_store(bot):
     return bot.db.users.plugin("xmpp")
-
-
-def _is_muc_pm(msg):
-    """Returns True if msg is a MUC direct message (not public groupchat)."""
-    return (
-        msg.get("type") in ("chat", "normal")
-        and hasattr(msg["from"], "bare")
-        and "@" in str(msg["from"].bare)
-        and str(msg["from"].bare) in JOINED_ROOMS
-    )
 
 
 def _resolve_target(bot, args, msg, is_room, nick):

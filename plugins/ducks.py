@@ -37,8 +37,14 @@ from slixmpp import JID
 
 from utils.command import command, Role
 from utils.config import config
-from plugins.rooms import JOINED_ROOMS
-from plugins import _core
+from plugins._core import (
+    _is_muc_pm,
+    _is_enabled_for_room,
+    handle_room_toggle_command,
+    JOINED_ROOMS,
+    _ensure_user_exists,
+    _is_public_muc,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -193,22 +199,6 @@ async def _increment_daily_duck_count(bot, room_jid: str) -> int:
     return room_data["count"]
 
 
-async def _ensure_user_exists(bot, user_jid: str, nickname: str | None = None):
-    user_jid = str(user_jid)
-
-    existing = await bot.db.users.get(user_jid)
-    if existing is not None:
-        return
-
-    try:
-        await bot.db.users.create(user_jid, nickname)
-        log.debug("[DUCKS] Created user row for %s", user_jid)
-    except Exception:
-        existing = await bot.db.users.get(user_jid)
-        if existing is None:
-            raise
-
-
 def _normalize_bare_jid(value) -> str | None:
     if not value:
         return None
@@ -242,16 +232,6 @@ async def _resolve_real_jid(bot, msg) -> str | None:
         pass
 
     return None
-
-
-async def _get_enabled_rooms(bot):
-    store = await get_ducks_store(bot)
-    return await store.get_global(DUCKS_KEY, default={})
-
-
-async def _is_enabled_for_room(bot, room_jid: str) -> bool:
-    enabled = await _get_enabled_rooms(bot)
-    return bool(enabled.get(room_jid, False))
 
 
 async def _get_last_duck_time(bot, room_jid):
@@ -545,13 +525,9 @@ async def _handle_duck_action(bot, msg, action):
     log.info("[DUCKS] %s (%s) %s a duck in %s", display_name, user_jid, verb, room_jid)
 
 
-def _is_public_muc(msg, is_room: bool) -> bool:
-    return is_room and msg.get("type") == "groupchat"
-
-
 @command("duck", role=Role.USER)
 async def duck_command(bot, sender_jid, nick, args, msg, is_room):
-    handled = await _core.handle_room_toggle_command(
+    handled = await handle_room_toggle_command(
         bot,
         msg,
         is_room,
@@ -564,7 +540,7 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
     )
     if handled:
         room_jid = msg["from"].bare
-        if _core._is_muc_pm(msg) and args and args[0].lower() == "off":
+        if _is_muc_pm(msg) and args and args[0].lower() == "off":
             ACTIVE_DUCKS.pop(room_jid, None)
             PENDING_DUCKS.discard(room_jid)
             _reset_room_cycle(room_jid)
@@ -578,7 +554,7 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
                 expire_task.cancel()
         return
 
-    is_muc_pm = _core._is_muc_pm(msg)
+    is_muc_pm = _is_muc_pm(msg)
     is_public_room = _is_public_muc(msg, is_room)
 
     if not is_public_room:
@@ -591,7 +567,7 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
         return
 
     room_jid = msg["from"].bare
-    if not await _is_enabled_for_room(bot, room_jid):
+    if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", room_jid):
         return
 
     if not args:
@@ -660,7 +636,7 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
 async def bef_command(bot, sender_jid, nick, args, msg, is_room):
     if not _is_public_muc(msg, is_room):
         return
-    if not await _is_enabled_for_room(bot, msg["from"].bare):
+    if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", msg["from"].bare):
         return
     await _handle_duck_action(bot, msg, "befriended")
 
@@ -669,7 +645,7 @@ async def bef_command(bot, sender_jid, nick, args, msg, is_room):
 async def trap_command(bot, sender_jid, nick, args, msg, is_room):
     if not _is_public_muc(msg, is_room):
         return
-    if not await _is_enabled_for_room(bot, msg["from"].bare):
+    if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", msg["from"].bare):
         return
     await _handle_duck_action(bot, msg, "trapped")
 
@@ -678,7 +654,7 @@ async def trap_command(bot, sender_jid, nick, args, msg, is_room):
 async def duckstats_command(bot, sender_jid, nick, args, msg, is_room):
     if not _is_public_muc(msg, is_room):
         return
-    if not await _is_enabled_for_room(bot, msg["from"].bare):
+    if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", msg["from"].bare):
         return
     await duck_command(bot, sender_jid, nick, ["stats", *args], msg, is_room)
 
@@ -702,7 +678,7 @@ async def on_message(bot, msg):
 
         room_jid = msg["from"].bare
 
-        if not await _is_enabled_for_room(bot, room_jid):
+        if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", room_jid):
             return
 
         bot_nick = bot.presence.joined_rooms.get(room_jid)

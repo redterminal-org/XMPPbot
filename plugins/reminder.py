@@ -45,8 +45,14 @@ import pytz
 
 from utils.command import command, Role
 from utils.config import config
-from plugins._core import handle_room_toggle_command
-from plugins.rooms import JOINED_ROOMS
+from plugins._core import (
+    handle_room_toggle_command,
+    get_user_tzinfo,
+    JOINED_ROOMS,
+    _is_muc_pm,
+    _normalize_bare_jid,
+    parse_duration,
+)
 
 log = logging.getLogger(__name__)
 
@@ -83,19 +89,6 @@ def _utc_tz():
     return pytz.UTC
 
 
-def _normalize_user_jid(sender_jid) -> str:
-    """Return a stable bare JID-ish string for ownership checks.
-
-    This avoids storing resource/nick variants for the same user when possible.
-    """
-    value = str(sender_jid)
-
-    if "/" in value:
-        return value.split("/", 1)[0]
-
-    return value
-
-
 def _display_nick(sender_jid, nick: str | None = None) -> str:
     """Best-effort display name for reminder messages."""
     if nick:
@@ -114,24 +107,13 @@ def _display_nick(sender_jid, nick: str | None = None) -> str:
     return value
 
 
-def _is_muc_pm(msg, is_room: bool) -> bool:
-    """Return True for private messages from a MUC occupant."""
-    if is_room:
-        return False
-
-    try:
-        return msg["from"].bare in JOINED_ROOMS
-    except Exception:
-        return False
-
-
 def _timezone_lookup_jid(bot, sender_jid, msg, is_room: bool) -> str | None:
     """Return the best real JID to use for vCard TIMEZONE lookup."""
     if not is_room and not _is_muc_pm(msg, is_room):
         try:
             return str(msg["from"].bare)
         except Exception:
-            return _normalize_user_jid(sender_jid)
+            return _normalize_bare_jid(sender_jid)
 
     try:
         muc = getattr(bot, "plugin", {}).get("xep_0045", None)
@@ -140,7 +122,7 @@ def _timezone_lookup_jid(bot, sender_jid, msg, is_room: bool) -> str | None:
             nick = msg["from"].resource
             real_jid = muc.get_jid_property(room, nick, "jid")
             if real_jid:
-                return _normalize_user_jid(real_jid)
+                return _normalize_bare_jid(real_jid)
     except Exception as exc:
         log.debug("[REMINDER] Could not resolve MUC real JID for timezone: %s", exc)
 
@@ -151,40 +133,11 @@ def _timezone_lookup_jid(bot, sender_jid, msg, is_room: bool) -> str | None:
         nick_info = joined.get("nicks", {}).get(muc_nick, {})
         real_jid = nick_info.get("jid")
         if real_jid:
-            return _normalize_user_jid(real_jid)
+            return _normalize_bare_jid(real_jid)
     except Exception as exc:
         log.debug("[REMINDER] Could not resolve JOINED_ROOMS JID for timezone: %s", exc)
 
-    return _normalize_user_jid(sender_jid)
-
-
-async def _get_user_timezone(bot, timezone_jid: str | None) -> datetime.tzinfo:
-    """Return the user's vCard TIMEZONE or UTC as fallback."""
-    if not timezone_jid:
-        return _utc_tz()
-
-    try:
-        store = bot.db.users.plugin("vcard")
-        timezone_name = await store.get(str(timezone_jid), "TIMEZONE")
-
-        if timezone_name and timezone_name in pytz.all_timezones:
-            return pytz.timezone(timezone_name)
-
-        if timezone_name:
-            log.warning(
-                "[REMINDER] Invalid vCard TIMEZONE for %s: %s; falling back to UTC",
-                timezone_jid,
-                timezone_name,
-            )
-
-    except Exception as exc:
-        log.warning(
-            "[REMINDER] Could not read vCard TIMEZONE for %s: %s; falling back to UTC",
-            timezone_jid,
-            exc,
-        )
-
-    return _utc_tz()
+    return _normalize_bare_jid(sender_jid)
 
 
 def _localize_naive_datetime(
@@ -229,7 +182,7 @@ def _reminder_context(bot, sender_jid, nick, msg, is_room: bool):
     """
     if is_room:
         room_jid = msg["from"].bare
-        user_jid = _normalize_user_jid(sender_jid)
+        user_jid = _normalize_bare_jid(sender_jid)
         display_nick = _display_nick(sender_jid, nick)
 
         return {
@@ -254,7 +207,7 @@ def _reminder_context(bot, sender_jid, nick, msg, is_room: bool):
             "msg_type": "chat",
         }
 
-    user_jid = _normalize_user_jid(sender_jid)
+    user_jid = _normalize_bare_jid(sender_jid)
 
     return {
         "user_jid": user_jid,
@@ -421,39 +374,6 @@ async def _handle_reminder_control_command(bot, args, msg, is_room: bool) -> boo
     )
     log.info("[REMINDER] Plugin disabled globally; cancelled %s tasks", cancelled)
     return True
-
-
-def parse_duration(duration_str: str) -> int | None:
-    """Parse a duration string to seconds.
-
-    Supports:
-    - Single formats: 10s, 5m, 1h, 2d
-    - Combined formats: 2d5h3m20s, 1h30m, 3d12h
-    """
-    if not duration_str:
-        return None
-
-    duration_str = duration_str.lower().strip()
-
-    pattern = r"(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?"
-    match = re.fullmatch(pattern, duration_str)
-
-    if not match:
-        return None
-
-    days, hours, minutes, seconds = match.groups()
-
-    if not any([days, hours, minutes, seconds]):
-        return None
-
-    total_seconds = (
-        (int(days) if days else 0) * 86400
-        + (int(hours) if hours else 0) * 3600
-        + (int(minutes) if minutes else 0) * 60
-        + (int(seconds) if seconds else 0)
-    )
-
-    return total_seconds if total_seconds > 0 else None
 
 
 def format_seconds(total_seconds: float) -> str:
@@ -1074,7 +994,7 @@ async def remind_command(bot, sender_jid, nick, args, msg, is_room):
 
     try:
         ctx = _reminder_context(bot, sender_jid, nick, msg, is_room)
-        user_tz = await _get_user_timezone(bot, ctx.get("timezone_jid"))
+        user_tz = await get_user_tzinfo(bot, ctx.get("timezone_jid"))
 
         seconds, message, display_when = parse_reminder_when(args, user_tz)
 
@@ -1143,7 +1063,7 @@ async def list_reminders(bot, sender_jid, nick, args, msg, is_room):
     try:
         ctx = _reminder_context(bot, sender_jid, nick, msg, is_room)
         user_jid = ctx["user_jid"]
-        user_tz = await _get_user_timezone(bot, ctx.get("timezone_jid"))
+        user_tz = await get_user_tzinfo(bot, ctx.get("timezone_jid"))
 
         reminders = await _get_pending_reminders(bot, user_jid)
 

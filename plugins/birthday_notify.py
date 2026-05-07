@@ -33,8 +33,13 @@ from typing import Any
 
 from utils.command import command, Role
 from utils.config import config
-from plugins.rooms import JOINED_ROOMS
-from plugins._core import get_profile, handle_room_toggle_command
+from plugins._core import (
+    get_profile,
+    handle_room_toggle_command,
+    JOINED_ROOMS,
+    _ensure_user_exists,
+    _is_enabled_for_room,
+)
 
 log = logging.getLogger(__name__)
 
@@ -192,58 +197,6 @@ async def _store_get(store, jid: str, key: str, default=None):
     except TypeError:
         value = await store.get(jid, key)
         return default if value is None else value
-
-
-async def _ensure_user_exists(bot, user_jid: str, nickname: str | None = None):
-    """Ensure a user row exists before writing plugin runtime data.
-
-    users_runtime has a foreign key to users(jid), so runtime writes fail
-    unless the base user row already exists.
-    """
-    user_jid = str(user_jid)
-
-    try:
-        existing = await bot.db.users.get(user_jid)
-    except Exception:
-        log.exception("[BIRTHDAY] Failed to read user row for %s", user_jid)
-        raise
-
-    if existing is not None:
-        return
-
-    try:
-        await bot.db.users.create(user_jid, nickname=nickname)
-        log.debug("[BIRTHDAY] Created user row for %s", user_jid)
-    except Exception:
-        # Race-safe-ish: another plugin/task may have created the user in between.
-        try:
-            existing = await bot.db.users.get(user_jid)
-            if existing is not None:
-                return
-        except Exception:
-            pass
-
-        log.exception("[BIRTHDAY] Failed to create user row for %s", user_jid)
-        raise
-
-
-async def _is_enabled_for_room(bot, room_jid: str) -> bool:
-    """Check if birthday notifications are enabled for a specific room."""
-    try:
-        store = bot.db.users.plugin("birthday_notify")
-        enabled_rooms = await store.get_global(
-            "birthday_notify",
-            default={},
-        )
-
-        if not isinstance(enabled_rooms, dict):
-            return False
-
-        return enabled_rooms.get(str(room_jid), False) is True
-
-    except Exception:
-        log.exception("[BIRTHDAY] Failed to check room enabled state")
-        return False
 
 
 async def _load_announced_date(bot, room_jid: str, user_jid: str) -> str | None:
@@ -516,7 +469,7 @@ async def _check_room_birthdays(bot, room_jid: str):
     try:
         room_jid = str(room_jid)
 
-        enabled = await _is_enabled_for_room(bot, room_jid)
+        enabled = await _is_enabled_for_room(bot, "birthday_notify", "birthday_notify", room_jid)
         if not enabled:
             return
 
@@ -614,7 +567,7 @@ async def on_muc_presence(bot, pres):
 
         user_jid_str = str(jid.bare)
 
-        enabled = await _is_enabled_for_room(bot, str(room_jid))
+        enabled = await _is_enabled_for_room(bot, "birthday_notify", "birthday_notify", str(room_jid))
         if not enabled:
             return
 

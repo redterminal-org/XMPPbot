@@ -29,8 +29,20 @@ from typing import Any
 
 from utils.command import command, Role
 from utils.config import config
-from plugins import _core
-from plugins.rooms import JOINED_ROOMS
+from plugins._core import (
+    JOINED_ROOMS,
+    is_room_moderator_or_admin,
+    _is_enabled_for_room,
+    get_cached_messages,
+    extract_reply_quote,
+    get_reply_target,
+    get_cached_message_by_id,
+    get_stanza_id,
+    remember_stanza,
+    cache_message,
+    handle_room_toggle_command,
+    paginate_items,
+)
 
 log = logging.getLogger(__name__)
 
@@ -202,17 +214,12 @@ async def _enabled_rooms(bot) -> dict[str, bool]:
     return state
 
 
-async def _is_enabled_for_room(bot, room_jid: str) -> bool:
-    enabled = await _enabled_rooms(bot)
-    return bool(enabled.get(room_jid))
-
-
 async def _sender_can_manage_pins_in_room(bot, msg, room_jid: str) -> bool:
     """
     True if sender is moderator/admin/owner in this room (affiliation or role fallback).
     """
     nick = msg.get("mucnick") or msg["from"].resource or ""
-    return await _core.is_room_moderator_or_admin(bot, room_jid, str(nick))
+    return await is_room_moderator_or_admin(bot, room_jid, str(nick))
 
 
 def _format_timestamp(ts: int | float | None) -> str:
@@ -284,7 +291,7 @@ def _is_pin_add_command_body(body: str) -> bool:
 
 
 def _recent_cache_entries(room: str) -> list[dict[str, Any]]:
-    return _core.get_cached_messages(CACHE_NAMESPACE, room)
+    return get_cached_messages(CACHE_NAMESPACE, room)
 
 
 def _get_recent_target(room: str, offset: int = 1) -> dict[str, Any] | None:
@@ -401,14 +408,14 @@ async def _handle_reply_pin_add(bot, msg):
         if room not in JOINED_ROOMS:
             return False
 
-        if not await _is_enabled_for_room(bot, room):
+        if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
             return False
 
         # permission guard for reply-based pin add
         if not await _sender_can_manage_pins_in_room(bot, msg, room):
             return False
 
-        quote_text = _core.extract_reply_quote(body)
+        quote_text = extract_reply_quote(body)
         if not quote_text:
             return False
 
@@ -416,7 +423,7 @@ async def _handle_reply_pin_add(bot, msg):
         if not _is_pin_add_command_body(cmd_body):
             return False
 
-        reply_id = _core.get_reply_target(msg)
+        reply_id = get_reply_target(msg)
         cached_entry = None
         target_text = None
         target_nick = "unknown"
@@ -424,7 +431,7 @@ async def _handle_reply_pin_add(bot, msg):
         source = "quote"
 
         if reply_id:
-            cached_entry = _core.get_cached_message_by_id(CACHE_NAMESPACE, room, reply_id)
+            cached_entry = get_cached_message_by_id(CACHE_NAMESPACE, room, reply_id)
             if cached_entry:
                 target_text = cached_entry.get("body")
                 target_nick = cached_entry.get("nick") or "unknown"
@@ -471,15 +478,15 @@ async def _on_groupchat_message(bot, msg):
         if room not in JOINED_ROOMS:
             return
 
-        stanza_id = _core.get_stanza_id(msg)
-        if not _core.remember_stanza(CACHE_NAMESPACE, stanza_id):
+        stanza_id = get_stanza_id(msg)
+        if not remember_stanza(CACHE_NAMESPACE, stanza_id):
             return
 
         if _is_pin_command_message(body):
             return
 
         actor_nick = msg.get("mucnick") or msg["from"].resource or "unknown"
-        _core.cache_message(
+        cache_message(
             CACHE_NAMESPACE,
             room,
             actor_nick,
@@ -507,7 +514,7 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         )
         return
 
-    handled = await _core.handle_room_toggle_command(
+    handled = await handle_room_toggle_command(
         bot,
         msg,
         is_room,
@@ -529,7 +536,7 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
     subcmd = str(args[0]).lower()
 
     if subcmd == "list":
-        if not await _is_enabled_for_room(bot, room):
+        if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
             bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
             return
 
@@ -550,7 +557,7 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
             bot.reply(msg, "📌 No pinned messages stored for this room.", mention=False)
             return
 
-        page_items, page, total_pages, total = _core.paginate_items(pins, page, PAGE_SIZE)
+        page_items, page, total_pages, total = paginate_items(pins, page, PAGE_SIZE)
 
         lines = [f"📌 Pins for {room} ({total}) - Page {page}/{total_pages}", ""]
         lines.extend(_format_pin_line(entry) for entry in page_items)
@@ -563,7 +570,7 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if subcmd == "show":
-        if not await _is_enabled_for_room(bot, room):
+        if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
             bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
             return
 
@@ -608,7 +615,7 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if subcmd == "delete":
-        if not await _is_enabled_for_room(bot, room):
+        if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
             bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
             return
 
@@ -653,7 +660,7 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"ℹ️ To create a pin, use {_prefix()}pin add as a reply or {_prefix()}pin add last")
         return
 
-    if not await _is_enabled_for_room(bot, room):
+    if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
         bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
         return
 
