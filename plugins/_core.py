@@ -65,7 +65,7 @@ get_profile = get_user_vcard
 def _is_muc_pm(msg, joined_rooms=None):
     """Return True if message is a MUC private message."""
     # Joined rooms can be passed or imported if not given
-    if joined_rooms is None:
+    if not joined_rooms:
         joined_rooms = JOINED_ROOMS
     muc_from = getattr(msg["from"], "bare", None)
     return (
