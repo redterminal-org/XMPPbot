@@ -23,6 +23,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 from utils.command import command, Role
+from utils.config import config
 from plugins.rooms import JOINED_ROOMS
 
 try:
@@ -436,6 +437,7 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, "Usage: rss <add|delete|list> ...")
         return
     sub = args[0].lower()
+
     room = None
     if is_room or (
         msg.get("type") in ("chat", "normal")
@@ -448,7 +450,7 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
         if len(args) != 2:
             bot.reply(
                 msg,
-                "Usage: rss add <url> (in a room or MUC DM only)",
+                f"Usage: {config['prefix', ',']}rss add <url> (in a room or MUC DM only)",
             )
             return
         if not room:
@@ -487,6 +489,7 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
             if room not in feeds[url]["rooms"]:
                 feeds[url]["rooms"].append(room)
                 await save_feeds(store, feeds)
+                log.info(f"[RSS] ADD: {store}\n\n{feeds}")
                 await ensure_task(
                     bot, store, url, feeds[url]["period"]
                 )
@@ -514,6 +517,7 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
             return
         url = _normalize_url(args[1])
         feeds = await get_feeds(store)
+        log.info(f"[RSS] DELETE: {store}\n\n{feeds}")
         if url not in feeds:
             bot.reply(msg, "Feed not found.")
             return

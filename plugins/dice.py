@@ -1,6 +1,9 @@
 """
 Dice rolling plugin.
 
+To set/show plugin status in rooms, use:
+    {prefix}dice on|off|status
+
 Command:
     {prefix}dice <num>d<sides> [modifier] [operator] [target]
     {prefix}roll ...
@@ -17,10 +20,16 @@ import re
 import random
 from utils.command import command, Role
 from utils.config import config
+from plugins._core import (
+        _is_muc_pm,
+        handle_room_toggle_command,
+        _get_enabled_rooms,
+)
 
+DICE_KEY = "DICE"
 PLUGIN_META = {
     "name": "dice",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "description": "Roll dice with optional modifiers and success conditions.",
     "category": "games",
 }
@@ -35,6 +44,9 @@ DICE_RE = re.compile(
 async def dice_command(bot, sender_jid, nick, args, msg, is_room):
     """
     Roll dice with optional modifier and success/failure condition.
+
+    For plugin on|off|status in rooms, use:
+        {prefix}dice on|off|status
 
     Usage:
         {prefix}dice <num>d<sides> [modifier] [operator] [target]
@@ -53,6 +65,26 @@ async def dice_command(bot, sender_jid, nick, args, msg, is_room):
             f"🟡️ Usage: {config.get('prefix', ',')}dice <num>d<sides> "
             "[modifier] [operator] [target]"
         )
+        return
+
+    if is_room or _is_muc_pm(msg):
+        handled = await handle_room_toggle_command(
+            bot,
+            msg,
+            is_room,
+            args,
+            store_getter=get_dice_store,
+            key=DICE_KEY,
+            label="Roll Dice",
+            storage="dict",
+            log_prefix="[DICE]",
+        )
+        if handled:
+            return
+
+    enabled_rooms = await _get_enabled_rooms(bot, DICE_KEY, "dice")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ Dice Rolling is disabled in this room.")
         return
 
     expr = " ".join(args)
@@ -133,3 +165,7 @@ async def dice_command(bot, sender_jid, nick, args, msg, is_room):
         else:
             result_str += f" {cond_str} [🔴  FAILURE]"
     bot.reply(msg, f"🎲 {result_str}", ephemeral=False)
+
+
+async def get_dice_store(bot):
+    return bot.db.users.plugin("dice")

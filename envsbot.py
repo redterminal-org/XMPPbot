@@ -138,6 +138,7 @@ class Bot(slixmpp.ClientXMPP):
             # Check if send() is a coroutine (async)
             if inspect.iscoroutine(result):
                 await result
+            # log.info("[BOT] Message sent to %s: %s", message['to'], message['body'])
         except Exception as e:
             log.exception("[BOT] Failed to send message: %s", e)
 
@@ -313,6 +314,9 @@ class Bot(slixmpp.ClientXMPP):
                 # send reply safely
                 asyncio.create_task(self._reply_send_wrapper(message))
 
+                # log message
+                # log.info(f"[BOT] Replying in room {msg['from'].bare} to {msg.get('mucnick')}: {text}")
+
                 # support test MockMessage
                 if hasattr(msg, "replies"):
                     msg.replies.append(text)
@@ -339,6 +343,9 @@ class Bot(slixmpp.ClientXMPP):
 
                 # Make reply ephemeral
                 message.append(ET.Element("{urn:xmpp:hints}no-store"))
+
+                # log message
+                # log.info(f"[BOT] Replying to {msg['from']}: {text}")
 
                 # send reply safely
                 asyncio.create_task(self._reply_send_wrapper(message))

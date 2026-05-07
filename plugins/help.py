@@ -23,7 +23,7 @@ Command help:
 Examples:
   {prefix}help rooms
   {prefix}help {prefix}timezone
-  {prefix}help {prefix}status set
+  {prefix}help {prefix}presence set
 
 Notes
 -----
@@ -44,7 +44,7 @@ from utils.command import (
 )
 from utils.config import config
 
-from plugins._core import handle_room_toggle_command
+from plugins._core import handle_room_toggle_command, _get_enabled_rooms
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ HELP_KEY = "HELP"
 
 PLUGIN_META = {
     "name": "help",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Dynamic help for plugins and commands.",
     "category": "core",
     "requires": ["_core"],
@@ -197,8 +197,7 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
     prefix = config.get("prefix", ",")
 
     # Check, if command is allowed in this context (room or MUC PM)
-    store = await get_help_store(bot)
-    enabled_rooms = await store.get_global(HELP_KEY, default={})
+    enabled_rooms = await _get_enabled_rooms(bot, HELP_KEY, "help")
     if is_room and msg["from"].bare not in enabled_rooms:
         bot.reply(msg, "ℹ️ Help is only available via private message in this room.")
         return

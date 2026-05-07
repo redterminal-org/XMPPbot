@@ -2,6 +2,9 @@
 Tools plugin: Utility commands for bot interaction including ping/pong, message echo,
 timezone-aware time/date lookups, and Unix timestamp conversion.
 
+To use on/off/status to turn on/off or show the status of the plugin, use:
+    {prefix}tools on|off|status
+
 Provides basic bot health checks, message echoing, and allows users to query the current
 time and date in their configured timezone or another user's timezone, as well as convert
 Unix timestamps.
@@ -17,21 +20,61 @@ Commands:
 
 import pytz
 import logging
-from plugins import _core
 from datetime import datetime
 from utils.command import command, Role
 from utils.config import config
 from plugins.rooms import JOINED_ROOMS
+from plugins._core import (
+    _is_muc_pm,
+    handle_room_toggle_command,
+    _get_enabled_rooms,
+    _get_user_timezone,
+)
 
 log = logging.getLogger(__name__)
 
+TOOLS_KEY = "TOOLS"
 PLUGIN_META = {
     "name": "tools",
-    "version": "0.3.2",
+    "version": "0.4.0",
     "description": "Utility commands: ping/pong, message echo, timezone-aware time/date lookups, and Unix timestamp conversion",
     "category": "utility",
     "requires": ["_core", "vcard"],
 }
+
+
+@command("tools", role=Role.MODERATOR)
+async def information_command(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Toggle tools plugin features in the current room.
+
+    Usage:
+        {prefix}tools on|off|status
+    """
+    if not args:
+        bot.reply(msg, f"Usage: {config.get('prefix', ',')}tools on|off|status")
+        return
+
+    if is_room or _is_muc_pm(msg):
+        handled = await handle_room_toggle_command(
+            bot,
+            msg,
+            is_room,
+            args,
+            store_getter=get_tools_store,
+            key=TOOLS_KEY,
+            label="Get online infos",
+            storage="dict",
+            log_prefix="[INFORMATION]",
+        )
+        if handled:
+            return
+
+    bot.reply(msg, "Usage: {prefix}information on|off|status (in a room or PM)")
+
+
+async def get_tools_store(bot):
+    return bot.db.users.plugin("tools")
 
 
 @command("ping", role=Role.USER, aliases=["pong"])
@@ -42,6 +85,11 @@ async def ping_command(bot, sender_jid, nick, args, msg, is_room):
     Usage:
         {prefix}ping
     """
+    enabled_rooms = await _get_enabled_rooms(bot, TOOLS_KEY, "tools")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ ping is disabled in this room.")
+        return
+
     bot.reply(msg, "🏓 Pong!", ephemeral=False)
 
 
@@ -56,6 +104,11 @@ async def echo_command(bot, sender_jid, nick, args, msg, is_room):
     Examples:
         {prefix}echo Hello World!
     """
+    enabled_rooms = await _get_enabled_rooms(bot, TOOLS_KEY, "tools")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ echo is disabled in this room.")
+        return
+
     if not args:
         bot.reply(msg, f"🔴 Usage: {config.get('prefix', ',')}echo <message>")
         return
@@ -76,9 +129,14 @@ async def time_command(bot, sender_jid, nick, args, msg, is_room):
         {prefix}time
         {prefix}time <nick>
     """
+    enabled_rooms = await _get_enabled_rooms(bot, TOOLS_KEY, "tools")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ time is disabled in this room.")
+        return
+
     room = msg["from"].bare
     nicks = JOINED_ROOMS.get(room, {}).get("nicks", {})
-    if is_room or _core._is_muc_pm(msg):
+    if is_room or _is_muc_pm(msg):
         if args:
             target_nick = " ".join(args).strip()
             info = nicks.get(target_nick)
@@ -103,8 +161,7 @@ async def time_command(bot, sender_jid, nick, args, msg, is_room):
         target_jid = str(msg["from"].bare)
         display_name = target_jid
 
-    store = bot.db.users.plugin("vcard")
-    timezone = await store.get(target_jid, "TIMEZONE")
+    timezone = await _get_user_timezone(bot, target_jid)
 
     if not timezone:
         bot.reply(msg, f"🟡️ No TIMEZONE set for {display_name}. Using UTC. "
@@ -135,9 +192,14 @@ async def date_command(bot, sender_jid, nick, args, msg, is_room):
         {prefix}date
         {prefix}date <nick>
     """
+    enabled_rooms = await _get_enabled_rooms(bot, TOOLS_KEY, "tools")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ date is disabled in this room.")
+        return
+
     room = msg["from"].bare
     nicks = JOINED_ROOMS.get(room, {}).get("nicks", {})
-    if is_room or _core._is_muc_pm(msg):
+    if is_room or _is_muc_pm(msg):
         if args:
             target_nick = " ".join(args).strip()
             info = nicks.get(target_nick)
@@ -162,8 +224,7 @@ async def date_command(bot, sender_jid, nick, args, msg, is_room):
         target_jid = str(msg["from"].bare)
         display_name = target_jid
 
-    store = bot.db.users.plugin("vcard")
-    timezone = await store.get(target_jid, "TIMEZONE")
+    timezone = await _get_user_timezone(bot, target_jid)
 
     if not timezone:
         bot.reply(msg, f"🟡️ No TIMEZONE set for {display_name}. Using UTC. "
@@ -193,6 +254,11 @@ async def utc_command(bot, sender_jid, nick, args, msg, is_room):
     Usage:
         {prefix}utc
     """
+    enabled_rooms = await _get_enabled_rooms(bot, TOOLS_KEY, "tools")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ utc is disabled in this room.")
+        return
+
     now = datetime.now(pytz.UTC)
     formatted = now.strftime("%Y-%m-%d %H:%M:%S")
     bot.reply(msg, f"🌍 Current UTC time: {formatted}", ephemeral=False)
@@ -209,6 +275,11 @@ async def timestamp_command(bot, sender_jid, nick, args, msg, is_room):
     Examples:
         {prefix}ts 1704067200
     """
+    enabled_rooms = await _get_enabled_rooms(bot, TOOLS_KEY, "tools")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ ts is disabled in this room.")
+        return
+
     if not args:
         bot.reply(msg, f"🔴 Usage: {config.get('prefix', ',')}ts <unix_timestamp>")
         return
@@ -221,9 +292,8 @@ async def timestamp_command(bot, sender_jid, nick, args, msg, is_room):
 
     try:
         # Get user's timezone
-        store = bot.db.users.plugin("vcard")
         target_jid = JOINED_ROOMS.get(msg["from"].bare, {}).get("nicks", {}).get(nick, {}).get("jid", str(msg["from"].bare))
-        timezone = await store.get(target_jid, "TIMEZONE")
+        timezone = await _get_user_timezone(bot, target_jid)
 
         if timezone:
             try:

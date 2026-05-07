@@ -23,10 +23,11 @@ from functools import partial
 
 from utils.command import command, Role
 from utils.config import config
-from plugins.rooms import JOINED_ROOMS
 from plugins._core import (
     handle_room_toggle_command,
-    get_jids_from_nick_index
+    get_jids_from_nick_index,
+    _is_muc_pm,
+    get_user_tzinfo,
 )
 
 log = logging.getLogger(__name__)
@@ -46,16 +47,6 @@ async def get_tell_store(bot):
     return bot.db.users.plugin("tell")
 
 
-def _is_muc_pm(msg):
-    """Returns True if msg is a MUC direct message (not public groupchat)."""
-    return (
-        msg.get("type") in ("chat", "normal")
-        and hasattr(msg["from"], "bare")
-        and "@" in str(msg["from"].bare)
-        and str(msg["from"].bare) in JOINED_ROOMS
-    )
-
-
 def parse_nick_and_message(args_str):
     """
     Splits on the first colon.
@@ -69,23 +60,6 @@ def parse_nick_and_message(args_str):
     if not nick or not message:
         return None, None
     return nick, message
-
-
-async def get_timezone(bot, jid):
-    """
-    Get the user's timezone from the global PluginRuntimeStore,
-    fallback to UTC.
-    """
-    store = bot.db.users.plugin("vcard")
-    tzname = None
-    if store:
-        tzname = await store.get(jid, "TIMEZONE")
-    if tzname:
-        try:
-            return pytz.timezone(tzname)
-        except Exception:
-            pass
-    return pytz.utc
 
 
 async def tell_store(bot, recv_jid, payload):
@@ -191,9 +165,9 @@ async def deliver_tell_messages(bot, msg):
     if not messages:
         return
 
-    tzinfo = await get_timezone(bot, rec_jid)
+    tzinfo = await get_user_tzinfo(bot, rec_jid)
     for entry in messages:
-        when = datetime.datetime.fromtimestamp(entry["timestamp"], pytz.utc).astimezone(
+        when = datetime.datetime.fromtimestamp(entry["timestamp"], pytz.timezone("UTC")).astimezone(
             tzinfo
         )
         timestr = when.strftime("%a, %d %b %H:%M %Z")

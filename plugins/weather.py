@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "weather",
-    "version": "0.4.2",
+    "version": "0.5.0",
     "description": ("Gives weather according to users location (supports MUCs"
                     "and MUC DMs)"),
     "category": "info",
@@ -97,8 +97,7 @@ async def weather_command(bot, sender_jid, nick, args, msg, is_room):
     if handled:
         return
 
-    store = await get_weather_store(bot)
-    enabled_rooms = await store.get_global(WEATHER_KEY, default={})
+    enabled_rooms = await _core._get_enabled_rooms(bot, WEATHER_KEY, "weather")
 
     display_name = ""
     if is_room and not _core._is_muc_pm(msg):

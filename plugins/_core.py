@@ -10,6 +10,10 @@ Put any functions or objects here that:
   - should ONLY be initialized after their dependencies are loaded
 """
 import logging
+import re
+import pytz
+import datetime
+from slixmpp import JID
 from collections import defaultdict, deque
 from typing import Any, Awaitable, Callable, Optional
 
@@ -20,7 +24,7 @@ from plugins.vcard import get_user_vcard
 
 PLUGIN_META = {
     "name": "_core",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Core utilities and shared helpers for other plugins.",
     "category": "internal",
     "requires": ["rooms"],  # Ensure 'rooms' is loaded first
@@ -71,6 +75,29 @@ def _is_muc_pm(msg, joined_rooms=None):
     )
 
 
+# ----------------------------------------------------------------------
+# Check if a message is a public groupchat message (i.e., sent to a MUC
+# room, not a private message)
+# -----------------------------------------------------------------------
+def _is_public_muc(msg, is_room: bool) -> bool:
+    return is_room and msg.get("type") == "groupchat"
+
+
+# ----------------------------------------------------------------------
+# Helper to normalize a JID to its bare form, with robust error handling to
+# avoid exceptions from invalid JID formats. If the input is not a valid JID,
+# it will fall back to a best-effort string parsing to extract the bare JID.
+# -----------------------------------------------------------------------
+def _normalize_bare_jid(value) -> str | None:
+    if not value:
+        return None
+    try:
+        return str(JID(str(value)).bare)
+    except Exception:
+        value = str(value)
+        return value.split("/", 1)[0]
+
+
 # -----------------------------------------------------------------------
 # Get the real JID of the sender, check for MUC private message first,
 # then groupchat, then DM
@@ -80,7 +107,7 @@ async def get_real_jid(bot, msg):
     Resolve the real sender JID in all contexts (groupchat, MUC PM, or DM).
 
     returns:
-        - jid (str): The resolved JID of the sender
+        - jid (str): The resolved JID of the sender (normalized)
         - is_muc_private (bool): True if this was a MUC private message
         - is_muc_groupchat (bool): True if this was a groupchat message
     """
@@ -97,7 +124,7 @@ async def get_real_jid(bot, msg):
         try:
             result = JOINED_ROOMS.get(room, {}).get("nicks", {}).get(nick, {}).get("jid", None)
         except Exception as e:
-        #    log.warning("[CORE] 🟡 Error resolving real JID for %s in %s: %s", nick, room, e)
+            # log.warning("[CORE] 🟡 Error resolving real JID for %s in %s: %s", nick, room, e)
             result = None
 
         # Fallback: try to resolve via UserManager's _nick_index if not found
@@ -118,7 +145,165 @@ async def get_real_jid(bot, msg):
     else:
         # Fallback: use the sender's JID as-is
         jid = None
-    return jid, is_muc_private, is_muc_groupchat
+    return _normalize_bare_jid(jid), is_muc_private, is_muc_groupchat
+
+
+# -----------------------------------------------------------------------
+# Helper to ensure a user row exists in the database for a given JID, creating
+# one if necessary. This is useful to call at the start of plugin commands
+# handlers to ensure we have a user record to work with.
+# -----------------------------------------------------------------------
+async def _ensure_user_exists(bot, user_jid: str, nickname: str | None = None):
+    user_jid = str(user_jid)
+
+    existing = await bot.db.users.get(user_jid)
+    if existing is not None:
+        return
+
+    try:
+        await bot.db.users.create(user_jid, nickname)
+        log.debug("[CORE] Created user row for %s", user_jid)
+    except Exception:
+        existing = await bot.db.users.get(user_jid)
+        if existing is None:
+            raise
+
+
+#------------------------------------------------------------------------
+# Helper to get a user's timezone from their vCard, with robust error handling
+# and fallback to UTC if anything goes wrong (e.g., no vCard, missing TIMEZONE
+# field, invalid timezone name, database errors).
+# ------------------------------------------------------------------------
+
+# RETURN the tzinfo object for a user's timezone, or UTC if not set/invalid
+async def get_user_tzinfo(bot, timezone_jid: str) -> datetime.tzinfo:
+    """Return the user's timezone as a tzinfo object, or UTC if not set/invalid."""
+    tzname = await _get_user_timezone(bot, timezone_jid)
+    try:
+        return pytz.timezone(tzname)
+    except Exception:
+        log.warning(
+            "[CORE] Invalid timezone for %s: %s; falling back to UTC",
+            timezone_jid,
+            tzname,
+        )
+        return pytz.timezone("UTC")
+
+# Get IANA timezone name from the user's vCard TIMEZONE field as a string
+async def _get_user_timezone(bot, timezone_jid: str | None) -> str:
+    """Return the user's vCard TIMEZONE or UTC as fallback."""
+    if not timezone_jid:
+        return str(pytz.timezone("UTC"))
+
+    try:
+        store = bot.db.users.plugin("vcard")
+        timezone_name = await store.get(str(timezone_jid), "TIMEZONE")
+
+        if timezone_name and timezone_name in pytz.all_timezones:
+            return str(pytz.timezone(timezone_name))
+
+        if timezone_name:
+            log.warning(
+                "[CORE] Invalid vCard TIMEZONE for %s: %s; falling back to UTC",
+                timezone_jid,
+                timezone_name,
+            )
+
+    except Exception as exc:
+        log.warning(
+            "[CORE] Could not read vCard TIMEZONE for %s: %s; falling back to UTC",
+            timezone_jid,
+            exc,
+        )
+
+    return str(pytz.timezone("UTC"))
+
+
+# ------------------------------------------------------------------------
+# Helpers for managing room-scoped plugin settings, stored in the global
+# store as a dict of {room_jid: True}.
+# -------------------------------------------------------------------------
+async def _get_enabled_rooms(bot, key, plugin) -> dict:
+    """
+    Return a dict of {room_jid: True} for rooms where the feature is enabled.
+    """
+    store = await get_plugin_store(bot, plugin)
+    data = await store.get_global(key, default={})
+    return data if isinstance(data, dict) else {}
+
+
+async def _is_enabled_for_room(bot, key, plugin, room_jid: str) -> bool:
+    """Return True if the feature is enabled for the given room_jid, based on
+    the dict of {room_jid: True} stored in the global store under the given 
+    key.
+    """
+    enabled = await _get_enabled_rooms(bot, key, plugin)
+    return bool(enabled.get(room_jid))
+
+
+async def get_plugin_store(bot, plugin):
+    return bot.db.users.plugin(plugin)
+
+
+# ------------------------------------------------------------------------
+# General helper to check if a plugin feature is enabled for a room, based on a
+# dict of {room_jid: True} stored in the plugin's global store under a given
+# key. This is a more flexible version of _is_enabled_for_room that can be used
+# by any plugin without needing to import the plugin module or pass the plugin
+# instance, by allowing the caller to provide a custom store_getter function
+# that knows how to access the plugin's global store.global
+# -------------------------------------------------------------------------
+StoreGetter = Callable[[Any], Awaitable[Any]]
+
+
+async def is_plugin_enabled_for_room(
+    bot,
+    store_getter: StoreGetter,
+    key: str,
+    room_jid: str,
+) -> bool:
+    """Return True if {key} enabled for room_jid in the plugin's global store."""
+    store = await store_getter(bot)
+    state = await store.get_global(key, default={})
+    return isinstance(state, dict) and bool(state.get(room_jid))
+
+
+# ------------------------------------------------------------------------
+# Helper to parse duration strings like "2d5h3m20s" into total seconds. Supports
+# individual units (e.g., "10m") as well as combined formats. Returns None for
+# invalid formats or zero duration.
+# ------------------------------------------------------------------------
+def parse_duration(duration_str: str) -> int | None:
+    """Parse a duration string to seconds.
+
+    Supports:
+    - Single formats: 10s, 5m, 1h, 2d
+    - Combined formats: 2d5h3m20s, 1h30m, 3d12h
+    """
+    if not duration_str:
+        return None
+
+    duration_str = duration_str.lower().strip()
+
+    pattern = r"(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?"
+    match = re.fullmatch(pattern, duration_str)
+
+    if not match:
+        return None
+
+    days, hours, minutes, seconds = match.groups()
+
+    if not any([days, hours, minutes, seconds]):
+        return None
+
+    total_seconds = (
+        (int(days) if days else 0) * 86400
+        + (int(hours) if hours else 0) * 3600
+        + (int(minutes) if minutes else 0) * 60
+        + (int(seconds) if seconds else 0)
+    )
+
+    return total_seconds if total_seconds > 0 else None
 
 
 # -----------------------------------------------------------------------
@@ -373,8 +558,6 @@ def get_cached_message_by_id(namespace: str, room: str, msg_id: str) -> dict[str
 # control these settings via simple commands in the MUC DM.
 # ------------------------------------------------------------------------
 
-StoreGetter = Callable[[Any], Awaitable[Any]]
-
 _CONTROL_COMMANDS = {"on", "off", "status"}
 _ADMIN_AFFILIATIONS = {"admin", "owner"}
 
@@ -461,7 +644,7 @@ async def muc_pm_sender_can_manage_room(
                 return True, room_jid, None
 
         except Exception:
-            log.exception("[PLUGIN_HELPER] Failed to resolve user role")
+            log.exception("[CORE] Failed to resolve user role")
 
     return False, room_jid, "⛔ Only room admins/owners can use on/off/status here."
 

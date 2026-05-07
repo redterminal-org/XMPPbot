@@ -1,32 +1,54 @@
 """
 Bot presence and status management.
 
-This plugin allows moderators to change the bot's XMPP presence
-(online, away, do-not-disturb, etc.) and lets users view the
-current presence state and status message.
-"""
+To turn on|off|status for this plugin, use the following command:
+    {prefix}presence on|off|status
 
+This plugin allows administrators to change the bot's XMPP presence
+(online, away, do-not-disturb, etc.) and lets users view the current
+presence state and status message.
+
+Usage:
+    {prefix}presence - Shows the bots current presence (status and message)
+    {prefix}presence set <show> [message] - Sets the bot's presence
+
+Available <show> statuses for setting the status:
+    online - Normal online status
+    chat - If you're available for chatting or searching for for talking.
+    away - Away status indicator for 'Away From Keyboard' events.
+    xa - 'Extended Away': For longer periods of being away, like sleeping.
+    dnd - 'Do Not Disturb': If you don't want to be contacted at the moment
+"""
 import logging
 from utils.command import command, Role
+from plugins._core import (
+    handle_room_toggle_command,
+    _is_muc_pm,
+    _get_enabled_rooms
+)
 
 log = logging.getLogger(__name__)
 
+PRESENCE_KEY = "PRESENCE"
 PLUGIN_META = {
-    "name": "status",
-    "version": "0.1.0",
+    "name": "presence",
+    "version": "0.2.1",
     "description": "Bot presence and status management",
     "category": "info",
 }
 
 
-@command("status")
-async def show_status(bot, sender_jid, nick, args, msg, is_room):
+@command("presence")
+async def presence_show(bot, sender_jid, nick, args, msg, is_room):
     """
     Display the current bot presence and status message.
 
+    To use on|off|status for this plugin, use the following command:
+        {prefix}presence on|off|status
+
     Command
     -------
-    {prefix}status
+    {prefix}presence
 
     Description
     -----------
@@ -47,8 +69,27 @@ async def show_status(bot, sender_jid, nick, args, msg, is_room):
 
     Example
     -------
-    {prefix}status
+    {prefix}presence
     """
+    if is_room or _is_muc_pm(msg):
+        handled = await handle_room_toggle_command(
+            bot,
+            msg,
+            is_room,
+            args,
+            store_getter=get_presence_store,
+            key=PRESENCE_KEY,
+            label="Get/Set bot presence",
+            storage="dict",
+            log_prefix="[PRESENCE]",
+        )
+        if handled:
+            return
+
+    enabled_rooms = await _get_enabled_rooms(bot, PRESENCE_KEY, "presence")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ presence lookup is disabled in this room.")
+        return
 
     show = bot.presence.status["show"]
     message = bot.presence.status["status"]
@@ -66,21 +107,21 @@ async def show_status(bot, sender_jid, nick, args, msg, is_room):
     )
 
 
-@command("status set", role=Role.ADMIN)
-async def status_set(bot, sender_jid, nick, args, msg, is_room):
+@command("presence set", role=Role.ADMIN)
+async def presence_set(bot, sender_jid, nick, args, msg, is_room):
     """
     Change the bot presence and optional status message.
 
     Command
     -------
-    {prefix}status set <show> [message]
+    {prefix}presence set <show> [message]
 
     Description
     -----------
-    Updates the presence state broadcast by the bot. Moderators
+    Updates the presence state broadcast by the bot. Admins
     can use this command to indicate availability or activity.
 
-    Valid Presence States
+    Valid Presence States (<show>)
     ---------------------
     online
     -   Default available presence.
@@ -102,10 +143,14 @@ async def status_set(bot, sender_jid, nick, args, msg, is_room):
 
     Examples
     --------
-    {prefix}status set away
-    {prefix}status set away Out for lunch
-    {prefix}status set dnd Busy working
+    {prefix}presence set away
+    {prefix}presence set away Out for lunch
+    {prefix}presence set dnd Busy working
     """
+    enabled_rooms = await _get_enabled_rooms(bot, PRESENCE_KEY, "presence")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ presence setting is disabled in this room.")
+        return
 
     if len(args) < 1:
         bot.reply(
@@ -141,3 +186,7 @@ async def status_set(bot, sender_jid, nick, args, msg, is_room):
     )
 
     log.info(f"[STATUS] {response}")
+
+
+async def get_presence_store(bot):
+    return bot.db.users.plugin("presence")

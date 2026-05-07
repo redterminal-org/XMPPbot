@@ -24,7 +24,11 @@ from bs4 import BeautifulSoup
 
 from utils.command import command, Role
 from utils.config import config
-from plugins._core import handle_room_toggle_command, _is_muc_pm
+from plugins._core import (
+    handle_room_toggle_command,
+    _is_muc_pm,
+    _get_enabled_rooms
+)
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +36,7 @@ INFO_KEY = "INFORMATION"
 
 PLUGIN_META = {
     "name": "information",
-    "version": "0.3.1",
+    "version": "0.4.0",
     "description": "Wikipedia, Fediverse and Urban Dictionary lookup.",
     "category": "info",
     "requires": ["_core"],
@@ -66,8 +70,7 @@ async def fediverse_latest(bot, sender_jid, nick, args, msg, is_room):
     Example:
         {prefix}fediverse @Gargron@mastodon.social
     """
-    store = await get_info_store(bot)
-    enabled_rooms = await store.get_global(INFO_KEY, default={})
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
     if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
         bot.reply(msg, "ℹ️ Fediverse lookup is disabled in this room.")
         return
@@ -155,8 +158,7 @@ async def udict_search(bot, sender_jid, nick, args, msg, is_room):
     Example:
         {prefix}udict yeet
     """
-    store = await get_info_store(bot)
-    enabled_rooms = await store.get_global(INFO_KEY, default={})
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
     if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
         bot.reply(msg, "ℹ️ Urban Dictionary lookup is disabled in this room.")
         return
@@ -240,8 +242,7 @@ async def wikipedia_command(bot, sender_jid, nick, args, msg, is_room):
         {prefix}wikipedia <search term>
         {prefix}wiki <search term>
     """
-    store = await get_info_store(bot)
-    enabled_rooms = await store.get_global(INFO_KEY, default={})
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
     if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
         bot.reply(msg, "ℹ️ Wikipedia lookup is disabled in this room.")
         return
@@ -288,7 +289,7 @@ async def information_command(bot, sender_jid, nick, args, msg, is_room):
             args,
             store_getter=get_info_store,
             key=INFO_KEY,
-            label="Get online infos",
+            label="Get Urban Dictionary summaries",
             storage="dict",
             log_prefix="[INFORMATION]",
         )

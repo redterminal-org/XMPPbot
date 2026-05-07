@@ -45,7 +45,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "urlcheck",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "URL title and YouTube info fetcher for groupchats",
     "category": "info",
     "reqires": ["rooms", "_core"],
@@ -198,7 +198,7 @@ async def on_groupchat_message(bot, msg):
             loop = asyncio.get_running_loop()
             final_url, status, ctype, title, content_size, mdesc = (
                 await loop.run_in_executor(
-                        None, fetch_url_title, url, 3)
+                        None, fetch_url_title, url, 5)
             )
 
             st = f"(Status: {status})" if status in [200, 403] else ""
@@ -338,7 +338,7 @@ def has_xep_0392_link_metadata(msg):
     )
 
 
-def fetch_url_title(url, max_redirects=3):
+def fetch_url_title(url, max_redirects=5):
     """
     Fetch the final URL after redirects, status code, content type, title
     and description.
