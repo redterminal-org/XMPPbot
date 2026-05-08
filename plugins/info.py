@@ -277,14 +277,18 @@ async def wikipedia_command(bot, sender_jid, nick, args, msg, is_room):
 
 # ----------------- Chat Slang Lookup -----------------
 
-SLANG_CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                         "chat_slang.csv")
-SLANG_ADDITIONS_CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                                   "slang_additions.csv")
+# --- Configuration ---
+SLANG_CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)), "chat_slang.csv")
+SLANG_ADDITIONS_CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)), "slang_additions.csv")
+SLANG_REMOVALS_CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)), "slang_removals.csv")
 
+log = logging.getLogger(__name__)
+
+
+# --- CSV helpers ---
 
 def load_main_definitions():
-    """Load all acronyms and all descriptions for each, from main CSV only."""
+    """Load all acronyms and their descriptions from main CSV only."""
     defs = {}
     if os.path.exists(SLANG_CSV):
         with open(SLANG_CSV, encoding='utf-8') as f:
@@ -293,14 +297,10 @@ def load_main_definitions():
                     key = row[0].strip().lower()
                     desc = row[1].strip()
                     defs.setdefault(key, []).append(desc)
-    else:
-        log.warning(f"[ACRONYMS] Main slang CSV '{SLANG_CSV}' not found."
-                    " Acronym lookup will be empty.")
     return defs
 
 
 def all_main_descriptions(acronym):
-    """Return all unique descriptions for acronym in main list."""
     results = []
     seen = set()
     for d in load_main_definitions().get(acronym.lower().strip(), []):
@@ -311,178 +311,296 @@ def all_main_descriptions(acronym):
     return results
 
 
-def description_exists_anywhere(acronym, description):
-    """Check for (acronym, description-lower) in both files."""
+def addition_exists(acronym, description):
     acronym = acronym.lower().strip()
     description = description.lower().strip()
-    for fname in (SLANG_CSV, SLANG_ADDITIONS_CSV):
-        if os.path.exists(fname):
-            with open(fname, encoding="utf-8") as f:
-                for row in csv.reader(f):
-                    if len(row) >= 2:
-                        abbr, desc = row[0].strip().lower(), row[1].strip().lower()
-                        if abbr == acronym and desc == description:
-                            return True
-    return False
-
-
-@command("acronyms", aliases=["acro", "acronym"], role=Role.USER)
-async def acronyms_cmd(bot, sender, nick, args, msg, is_room):
-    """
-    Look up all definitions of a chat acronym. If a definition doesn't exist,
-    you can add it with '{prefix}acronym add <acronym> <description>'
-    (will be reviewed before added to main list).
-
-    Usage:
-        {prefix}acronyms <abbr>
-        {prefix}acro <abbr>
-    """
-    if not args:
-        return bot.reply(msg, f"Usage: {config.get('prefix', ',')}acronyms <abbreviation or acronym>")
-    query = args[0].strip().lower()
-    definitions = all_main_descriptions(query)
-    if definitions:
-        lines = [f"{query.upper()}: {d}" for d in definitions]
-        log.info(f"[ACRONYMS] Returned {len(definitions)} definitions"
-                 f" for acronym '{query}' from main list.")
-        return bot.reply(msg, lines)
-    else:
-        log.info(f"[ACRONYMS] User '{sender}' query '{query}' not found in main database.")
-        return bot.reply(msg, f"Sorry, '{query}' is not defined in my slang database."
-                              " Maybe you can add it with"
-                              f"'{config.get('prefix', ',')}acronym add <abbreviation> <description>'")
-
-
-@command("acronyms add", role=Role.USER, aliases=["acro add", "acronym add"])
-async def abbreviation_add_cmd(bot, sender, nick, args, msg, is_room):
-    """
-    Queue a new acronym/description (will be reviewed before added to the
-    main list).
-
-    Usage:
-        {prefix}acronym add <abbreviation> <description>
-        {prefix}acro add <abbreviation> <description>
-    """
-    if len(args) < 2:
-        return bot.reply(msg, f"Usage: {config.get('prefix', ',')}acronym add"
-                         "<abbreviation> <description>")
-    abbreviation = args[0].strip()
-    abbreviation = abbreviation.replace(",", " ")
-    description = " ".join(args[1:]).strip()
-    description = description.replace(",", " ")
-    if description_exists_anywhere(abbreviation, description):
-        log.info(f"[ACRONYMS] {sender} tried to queue existing def: {abbreviation}:{description}")
-        return bot.reply(msg, f"'{abbreviation}' with that description is already in the database.")
-    # Append to additions
-    os.makedirs(os.path.dirname(SLANG_ADDITIONS_CSV), exist_ok=True)
-    with open(SLANG_ADDITIONS_CSV, "a", encoding="utf-8", newline="") as f:
-        csv.writer(f).writerow([abbreviation, description])
-    log.info(f"[ACRONYMS] Queued new abbreviation by {sender}: {abbreviation}:{description}")
-    # Only confirm queuing to user, never output description details!
-    return bot.reply(msg, f"Abbreviation '{abbreviation}' was queued for review. It will only appear after admin approval.")
-
-
-@command("acronyms additions", role=Role.ADMIN, aliases=["acro additions", "acronym additions"])
-async def abbreviation_additions_cmd(bot, sender, nick, args, msg, is_room):
-    """
-    Show queued acronym additions (ADMIN only).
-
-    Usage:
-        {prefix}acronym additions
-        {prefix}acro additions
-    """
-    lines = []
-    if os.path.exists(SLANG_ADDITIONS_CSV):
-        with open(SLANG_ADDITIONS_CSV, encoding="utf-8") as f:
-            for row in csv.reader(f):
-                if len(row) >= 2:
-                    lines.append(f"{row[0]}: {row[1]}")
-    log.info(f"[ACRONYMS] Admin {sender} viewed the pending additions ({len(lines)} entries)")
-    if lines:
-        bot.reply(msg, "\n".join(lines))
-    else:
-        bot.reply(msg, "No pending abbreviation additions.")
-
-
-@command("acronyms delete", role=Role.ADMIN, aliases=["acro delete", "acronym delete"])
-async def abbreviation_deladdition_cmd(bot, sender, nick, args, msg, is_room):
-    """
-    Delete a specific (acronym, description) from additions (ADMIN only).
-
-    Usage:
-        {prefix}acronym delete <abbreviation> <description>
-        {prefix}acro delete <abbreviation> <description>
-    """
-    if len(args) < 2:
-        return bot.reply(msg, (f"Usage: {config.get('prefix', ',')}acronym delete"
-                               "<abbreviation> <description>"))
-    abbreviation = args[0].strip().lower()
-    description = " ".join(args[1:]).strip().lower()
-    # Read all, re-write without the target pair
-    entries = []
-    found = False
     if os.path.exists(SLANG_ADDITIONS_CSV):
         with open(SLANG_ADDITIONS_CSV, encoding="utf-8") as f:
             for row in csv.reader(f):
                 if len(row) >= 2:
                     abbr, desc = row[0].strip().lower(), row[1].strip().lower()
-                    if abbr == abbreviation and desc == description:
-                        found = True
-                        log.info(f"Admin {sender} deleted addition '{row[0]}: {row[1]}'")
-                        continue
-                    entries.append([row[0], row[1]])
-        # Write back without target
-        with open(SLANG_ADDITIONS_CSV, "w", encoding="utf-8", newline="") as f:
-            csv.writer(f).writerows(entries)
-    if found:
-        bot.reply(msg, f"Entry '{abbreviation}: {description}' removed from additions.")
-        log.info(f"[ACRONYMS] Admin {sender} deleted an addition: {abbreviation}: {description}")
-    else:
-        bot.reply(msg, "No such entry in additions.")
+                    if abbr == acronym and desc == description:
+                        return True
+    return False
 
 
-@command("acronyms merge", role=Role.ADMIN, aliases=["acro merge", "acronym merge"])
-async def abbreviation_merge_cmd(bot, sender, nick, args, msg, is_room):
+def removal_exists(acronym, description):
+    acronym = acronym.lower().strip()
+    description = description.lower().strip()
+    if os.path.exists(SLANG_REMOVALS_CSV):
+        with open(SLANG_REMOVALS_CSV, encoding="utf-8") as f:
+            for row in csv.reader(f):
+                if len(row) >= 2:
+                    abbr, desc = row[0].strip().lower(), row[1].strip().lower()
+                    if abbr == acronym and desc == description:
+                        return True
+    return False
+
+
+def description_exists_in_main(acronym, description):
+    acronym = acronym.lower().strip()
+    description = description.lower().strip()
+    if os.path.exists(SLANG_CSV):
+        with open(SLANG_CSV, encoding='utf-8') as f:
+            for row in csv.reader(f):
+                if len(row) >= 2:
+                    abbr, desc = row[0].strip().lower(), row[1].strip().lower()
+                    if abbr == acronym and desc == description:
+                        return True
+    return False
+
+
+def delete_from_csv(filename, matchfunc):
+    removed = 0
+    kept = []
+    if os.path.exists(filename):
+        with open(filename, encoding="utf-8") as f:
+            for row in csv.reader(f):
+                if not matchfunc(row):
+                    kept.append(row)
+                else:
+                    removed += 1
+        with open(filename, "w", encoding="utf-8", newline="") as f:
+            csv.writer(f).writerows(kept)
+    return removed
+
+
+# --- Acronym Commands ---
+
+@command("acronyms", aliases=["acro", "acronym"], role=Role.USER)
+async def acronyms_cmd(bot, sender, nick, args, msg, is_room):
     """
-    Merge queued abbreviation additions into main slang csv (ADMIN only).
-    Please do so only after review.
+    Look up all definitions of a chat acronym from the main list.
 
     Usage:
-        {prefix}acronym merge
-        {prefix}acro merge
+        {prefix}acronyms <acronym>
+        {prefix}acro <acronym>
+        {prefix}acronym <acronym>
     """
-    if not os.path.exists(SLANG_ADDITIONS_CSV):
-        return bot.reply(msg, "No pending additions to merge.")
-    main = {}
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ Acronyms are disabled in this room.")
+        return
+
+    if not args:
+        return bot.reply(msg, f"Usage: {bot.prefix}acronyms <acronym>".format(bot.prefix))
+    query = args[0].strip().lower()
+    definitions = all_main_descriptions(query)
+    if definitions:
+        lines = [f"{query.upper()}: {d}" for d in definitions]
+        log.info(f"[ACRONYMS] Returned {len(definitions)} definitions for acronym '{query}' from main list.")
+        return bot.reply(msg, lines)
+    else:
+        log.info(f"[ACRONYMS] User '{sender}' query '{query}' not found in main database.")
+        return bot.reply(msg, f"Sorry, '{query}' is not defined in my slang database.")
+
+
+@command("acronyms add", aliases=["acro add", "acronym add"], role=Role.USER)
+async def acronyms_add_cmd(bot, sender, nick, args, msg, is_room):
+    """
+    Suggest a new acronym/description. Entry will be reviewed by admins before becoming visible.
+
+    Usage:
+        {prefix}acronyms add <acronym> <description>
+        {prefix}acro add <acronym> <description>
+        {prefix}acronym add <acronym> <description>
+    """
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ Acronyms are disabled in this room.")
+        return
+
+    if len(args) < 2:
+        return bot.reply(msg, f"Usage: {bot.prefix}acronyms add <acronym> <description>")
+    abbreviation = args[0].strip()
+    description = " ".join(args[1:]).strip()
+    if description_exists_in_main(abbreviation, description):
+        log.info(f"[ACRONYMS] {sender} tried to queue existing main def: {abbreviation}:{description}")
+        return bot.reply(msg, f"The definition for '{abbreviation}' already exists in the database.")
+    if addition_exists(abbreviation, description):
+        log.info(f"[ACRONYMS] {sender} tried to queue existing pending addition: {abbreviation}:{description}")
+        return bot.reply(msg, f"This suggestion is already awaiting admin review.")
+    os.makedirs(os.path.dirname(SLANG_ADDITIONS_CSV), exist_ok=True)
+    with open(SLANG_ADDITIONS_CSV, "a", encoding="utf-8", newline="") as f:
+        csv.writer(f).writerow([abbreviation, description, nick or sender])
+    log.info(f"[ACRONYMS] Queued new addition by {sender}/{nick}: {abbreviation}:{description}")
+    return bot.reply(msg, f"Suggestion for '{abbreviation}' was queued for admin review. Thank you!")
+
+
+@command("acronyms remove", aliases=["acro remove", "acronym remove"], role=Role.USER)
+async def acronyms_remove_cmd(bot, sender, nick, args, msg, is_room):
+    """
+    Suggest the removal of an existing acronym/description pair. Entry will be reviewed by admins.
+
+    Usage:
+        {prefix}acronyms remove <acronym> <description>
+        {prefix}acro remove <acronym> <description>
+        {prefix}acronym remove <acronym> <description>
+    """
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ Acronyms are disabled in this room.")
+        return
+
+    if len(args) < 2:
+        return bot.reply(msg, f"Usage: {bot.prefix}acronyms remove <acronym> <description>")
+    abbreviation = args[0].strip()
+    description = " ".join(args[1:]).strip()
+    if not description_exists_in_main(abbreviation, description):
+        return bot.reply(msg, f"That definition doesn't exist in the main list.")
+    if removal_exists(abbreviation, description):
+        log.info(f"[ACRONYMS] {sender} tried to queue existing pending removal: {abbreviation}:{description}")
+        return bot.reply(msg, f"This removal is already awaiting admin review.")
+    os.makedirs(os.path.dirname(SLANG_REMOVALS_CSV), exist_ok=True)
+    with open(SLANG_REMOVALS_CSV, "a", encoding="utf-8", newline="") as f:
+        csv.writer(f).writerow([abbreviation, description, nick or sender])
+    log.info(f"[ACRONYMS] Queued new removal by {sender}/{nick}: {abbreviation}:{description}")
+    return bot.reply(msg, f"Removal suggestion for '{abbreviation}' was queued for admin review. Thank you!")
+
+
+@command("acronyms list", aliases=["acro list", "acronym list"], role=Role.ADMIN)
+async def acronyms_list_cmd(bot, sender, nick, args, msg, is_room):
+    """
+    Display pending slang additions and removals with proposer nicknames for admin review.
+
+    Usage:
+        {prefix}acronyms list
+        {prefix}acro list
+        {prefix}acronym list
+    """
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ Acronyms are disabled in this room.")
+        return
+
+    addition_lines = []
+    removal_lines = []
+    if os.path.exists(SLANG_ADDITIONS_CSV):
+        with open(SLANG_ADDITIONS_CSV, encoding="utf-8") as f:
+            for row in csv.reader(f):
+                if len(row) >= 3:
+                    addition_lines.append(f"{row[0].upper()}: {row[1]} (by {row[2]})")
+    if os.path.exists(SLANG_REMOVALS_CSV):
+        with open(SLANG_REMOVALS_CSV, encoding="utf-8") as f:
+            for row in csv.reader(f):
+                if len(row) >= 3:
+                    removal_lines.append(f"{row[0].upper()}: {row[1]} (by {row[2]})")
+    log.info(f"[ACRONYMS] Admin {sender} reviewed {len(addition_lines)} additions and {len(removal_lines)} removals.")
+    sections = []
+    if addition_lines:
+        sections.append("Pending Additions:\n" + "\n".join(addition_lines))
+    else:
+        sections.append("No pending additions.")
+    if removal_lines:
+        sections.append("Pending Removals:\n" + "\n".join(removal_lines))
+    else:
+        sections.append("No pending removals.")
+    bot.reply(msg, "\n\n".join(sections))
+
+@command("acronyms merge", aliases=["acro merge", "acronym merge"], role=Role.ADMIN)
+async def acronyms_merge_cmd(bot, sender, nick, args, msg, is_room):
+    """
+    Admin command to apply pending additions and removals to the main slang database.
+
+    Usage:
+        {prefix}acronyms merge
+        {prefix}acro merge
+        {prefix}acronym merge
+    """
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ Acronyms are disabled in this room.")
+        return
+
+    main_entries = []
     if os.path.exists(SLANG_CSV):
         with open(SLANG_CSV, encoding="utf-8") as f:
             for row in csv.reader(f):
                 if len(row) >= 2:
-                    abbr = row[0].strip().lower()
-                    desc = row[1].strip().lower()
-                    main.setdefault(abbr, set()).add(desc)
-    additions = []
-    with open(SLANG_ADDITIONS_CSV, encoding="utf-8") as f:
-        for row in csv.reader(f):
-            if len(row) >= 2:
-                abbr = row[0].strip()
-                desc = row[1].strip()
-                abbr_l = abbr.lower()
-                desc_l = desc.lower()
-                if abbr_l not in main or desc_l not in main[abbr_l]:
-                    additions.append((abbr, desc))
-                    main.setdefault(abbr_l, set()).add(desc_l)
-    if not additions:
-        os.remove(SLANG_ADDITIONS_CSV)
-        log.info(f"[ACRONYMS] No new unique additions to merge; cleared additions on {sender}'s request.")
-        return bot.reply(msg, "Nothing new to merge – all additions already present.")
-    with open(SLANG_CSV, "a", encoding="utf-8", newline="") as f:
+                    acro = row[0].strip()
+                    desc = row[1].strip()
+                    main_entries.append([acro, desc])
+    # Removals
+    removals = set()
+    if os.path.exists(SLANG_REMOVALS_CSV):
+        with open(SLANG_REMOVALS_CSV, encoding="utf-8") as f:
+            for row in csv.reader(f):
+                if len(row) >= 2:
+                    acro, desc = row[0].strip(), row[1].strip()
+                    removals.add((acro.lower(), desc.lower()))
+    kept_entries = [row for row in main_entries if (row[0].lower(), row[1].lower()) not in removals]
+    removed_count = len(main_entries) - len(kept_entries)
+    # Additions
+    new_add_count = 0
+    if os.path.exists(SLANG_ADDITIONS_CSV):
+        with open(SLANG_ADDITIONS_CSV, encoding="utf-8") as f:
+            for row in csv.reader(f):
+                if len(row) >= 2:
+                    acro, desc = row[0].strip(), row[1].strip()
+                    key = (acro.lower(), desc.lower())
+                    if key not in {(row[0].lower(), row[1].lower()) for row in kept_entries}:
+                        kept_entries.append([acro, desc])
+                        new_add_count += 1
+                        log.info(f"[ACRONYMS] Added new slang: {acro}:{desc}")
+    with open(SLANG_CSV, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerows(additions)
-    os.remove(SLANG_ADDITIONS_CSV)
-    log.info(f"[ACRONYMS] Admin {sender} merged {len(additions)} new abbreviations into chat_slang.csv")
-    bot.reply(msg, f"Merged {len(additions)} additions into the main slang database.")
+        writer.writerows(kept_entries)
+    if os.path.exists(SLANG_ADDITIONS_CSV):
+        os.remove(SLANG_ADDITIONS_CSV)
+    if os.path.exists(SLANG_REMOVALS_CSV):
+        os.remove(SLANG_REMOVALS_CSV)
+    log.info(f"[ACRONYMS] Admin {sender} merged: +{new_add_count} additions, -{removed_count} removals.")
+    bot.reply(msg, f"Merged {new_add_count} additions and {removed_count} removals into the slang database.")
 
+@command("acronyms delete", aliases=["acro delete", "acronym delete"], role=Role.ADMIN)
+async def acronyms_delete_cmd(bot, sender, nick, args, msg, is_room):
+    """
+    Admin command to delete from the suggestions/removals queue by (acronym, description) or by nick.
+
+    Usage:
+        {prefix}acronyms delete <acronym> <description>
+        {prefix}acro delete <acronym> <description>
+        {prefix}acronym delete <acronym> <description>
+        {prefix}acronyms delete <nick>
+        {prefix}acro delete <nick>
+        {prefix}acronym delete <nick>
+    """
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ Acronyms are disabled in this room.")
+        return
+
+    if not args:
+        return bot.reply(msg, f"Usage: {bot.prefix}acronyms delete <acronym> <description> OR {bot.prefix}acronyms delete <nick>")
+    total_removed = 0
+    if len(args) == 1:
+        # Delete all additions/removals made by that nick
+        nick_arg = args[0].strip().lower()
+        for fname in (SLANG_ADDITIONS_CSV, SLANG_REMOVALS_CSV):
+            def matchfunc(row):
+                return len(row) >= 3 and row[2].strip().lower() == nick_arg
+            removed = delete_from_csv(fname, matchfunc)
+            if removed:
+                log.info(f"[ACRONYMS] Admin {sender} deleted {removed} entries from {fname} for nick {nick_arg}")
+            total_removed += removed
+        if total_removed:
+            bot.reply(msg, f"Deleted {total_removed} entries for nick '{args[0].strip()}' from pending additions/removals.")
+        else:
+            bot.reply(msg, f"No pending additions/removals found for nick '{args[0].strip()}'.")
+    else:
+        abbreviation = args[0].strip().lower()
+        description = " ".join(args[1:]).strip().lower()
+        for fname in (SLANG_ADDITIONS_CSV, SLANG_REMOVALS_CSV):
+            def matchfunc(row):
+                return len(row) >= 2 and row[0].strip().lower() == abbreviation and row[1].strip().lower() == description
+            removed = delete_from_csv(fname, matchfunc)
+            if removed:
+                log.info(f"[ACRONYMS] Admin {sender} deleted {removed} entries from {fname} for {abbreviation}:{description}")
+            total_removed += removed
+        if total_removed:
+            bot.reply(msg, f"Deleted {total_removed} entries for '{abbreviation}: {description}' from pending additions/removals.")
+        else:
+            bot.reply(msg, f"No pending addition/removal found for '{abbreviation}: {description}'.")
 
 # ----------------- Information Plugin Toggle -----------------
 
