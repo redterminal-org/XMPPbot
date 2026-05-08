@@ -2,7 +2,8 @@ import slixmpp
 import asyncio
 import inspect
 import logging
-import json
+import os
+import shutil
 
 from slixmpp.xmlstream import ET
 
@@ -548,6 +549,16 @@ async def main():
         log.info("[XMPP] ✅ Database closed! End!")
 
 if __name__ == "__main__":
+    SOURCE = "init_chat_slang.csv"
+    TARGET = "chat_slang.csv"
+    if os.path.exists(SOURCE) and not os.path.exists(TARGET):
+        try:
+            shutil.copyfile(SOURCE, TARGET)
+            log.info(f"[INIT] ✅ Copied {SOURCE} to {TARGET}")
+        except Exception as e:
+            log.error(f"[INIT] 🔴 Failed to copy {SOURCE} to {TARGET}: {e}")
+    else:
+        log.warning(f"[INIT] 🔴 Source file {SOURCE} not found. Skipping copy.")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
