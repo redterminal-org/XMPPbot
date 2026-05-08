@@ -326,7 +326,7 @@ def description_exists_anywhere(acronym, description):
     return False
 
 
-@command("acronyms", aliases=["acro"], role=Role.USER)
+@command("acronyms", aliases=["acro", "acronym"], role=Role.USER)
 async def acronyms_cmd(bot, sender, nick, args, msg, is_room):
     """
     Look up all definitions of a chat acronym. If a definition doesn't exist,
@@ -353,7 +353,7 @@ async def acronyms_cmd(bot, sender, nick, args, msg, is_room):
                               f"'{config.get('prefix', ',')}acronym add <abbreviation> <description>'")
 
 
-@command("acronym add", role=Role.USER, aliases=["acro add"])
+@command("acronyms add", role=Role.USER, aliases=["acro add", "acronym add"])
 async def abbreviation_add_cmd(bot, sender, nick, args, msg, is_room):
     """
     Queue a new acronym/description (will be reviewed before added to the
@@ -382,7 +382,7 @@ async def abbreviation_add_cmd(bot, sender, nick, args, msg, is_room):
     return bot.reply(msg, f"Abbreviation '{abbreviation}' was queued for review. It will only appear after admin approval.")
 
 
-@command("acronyms additions", role=Role.ADMIN, aliases=["acro additions"])
+@command("acronyms additions", role=Role.ADMIN, aliases=["acro additions", "acronym additions"])
 async def abbreviation_additions_cmd(bot, sender, nick, args, msg, is_room):
     """
     Show queued acronym additions (ADMIN only).
@@ -404,7 +404,7 @@ async def abbreviation_additions_cmd(bot, sender, nick, args, msg, is_room):
         bot.reply(msg, "No pending abbreviation additions.")
 
 
-@command("acronyms delete", role=Role.ADMIN, aliases=["acro delete"])
+@command("acronyms delete", role=Role.ADMIN, aliases=["acro delete", "acronym delete"])
 async def abbreviation_deladdition_cmd(bot, sender, nick, args, msg, is_room):
     """
     Delete a specific (acronym, description) from additions (ADMIN only).
@@ -441,7 +441,7 @@ async def abbreviation_deladdition_cmd(bot, sender, nick, args, msg, is_room):
         bot.reply(msg, "No such entry in additions.")
 
 
-@command("acronyms merge", role=Role.ADMIN, aliases=["acro merge"])
+@command("acronyms merge", role=Role.ADMIN, aliases=["acro merge", "acronym merge"])
 async def abbreviation_merge_cmd(bot, sender, nick, args, msg, is_room):
     """
     Merge queued abbreviation additions into main slang csv (ADMIN only).
