@@ -90,7 +90,8 @@ async def get_latest_xkcd(session: aiohttp.ClientSession | None = None):
     return await fetch_xkcd(XKCD_LATEST_URL, session=session)
 
 
-async def get_xkcd(comic_id: int, session: aiohttp.ClientSession | None = None):
+async def get_xkcd(comic_id: int,
+                   session: aiohttp.ClientSession | None = None):
     """Fetch a specific XKCD comic by ID."""
     return await fetch_xkcd(XKCD_API_URL.format(comic_id), session=session)
 
@@ -294,13 +295,15 @@ async def migrate_xkcd_room_storage(bot):
     migrated = {str(room): True for room in rooms if room}
     await store.set_global(XKCD_KEY, migrated)
 
-    log.info("[XKCD] Migrated %s subscribed rooms to dict storage", len(migrated))
+    log.info("[XKCD] Migrated %s subscribed rooms to dict storage",
+             len(migrated))
 
 
 async def broadcast_comic_to_subscribed_rooms(bot, comic: dict[str, Any]):
     """Broadcast a comic to all subscribed rooms."""
     rooms = await get_subscribed_rooms(bot)
-    log.info("[XKCD] Broadcasting comic #%s to %s rooms", comic.get("num"), len(rooms))
+    log.info("[XKCD] Broadcasting comic #%s to %s rooms",
+             comic.get("num"), len(rooms))
 
     for room_id in rooms:
         if room_id in JOINED_ROOMS:
@@ -374,13 +377,16 @@ async def build_full_index(bot):
                         indexed += 1
 
                         if indexed % 200 == 0:
-                            await store.set_global(XKCD_INDEX_KEY, search_index)
-                            log.info("[XKCD] Indexed %s new comics...", indexed)
+                            await store.set_global(XKCD_INDEX_KEY,
+                                                   search_index)
+                            log.info("[XKCD] Indexed %s new comics...",
+                                     indexed)
 
                         await asyncio.sleep(INDEX_REQUEST_DELAY_SECONDS)
                     else:
                         failed += 1
-                        log.debug("[XKCD] Comic #%s could not be fetched", comic_id)
+                        log.debug("[XKCD] Comic #%s could not be fetched",
+                                  comic_id)
 
                 except asyncio.CancelledError:
                     log.info(
@@ -391,7 +397,8 @@ async def build_full_index(bot):
                     raise
 
                 except Exception as exc:
-                    log.debug("[XKCD] Failed to index comic #%s: %s", comic_id, exc)
+                    log.debug("[XKCD] Failed to index comic #%s: %s",
+                              comic_id, exc)
                     failed += 1
 
             await store.set_global(XKCD_INDEX_KEY, search_index)
@@ -453,11 +460,13 @@ async def xkcd_check_loop(bot):
         if LAST_COMIC_ID == 0:
             LAST_COMIC_ID = current_id
             await save_last_comic_id(bot, current_id)
-            log.info("[XKCD] First run: Initialized from comic #%s", current_id)
+            log.info("[XKCD] First run: Initialized from comic #%s",
+                     current_id)
         elif current_id > LAST_COMIC_ID:
             await catch_up_missing_comics(bot, LAST_COMIC_ID + 1, current_id)
         else:
-            log.debug("[XKCD] Polling started: No new comics (last=%s)", LAST_COMIC_ID)
+            log.debug("[XKCD] Polling started: No new comics (last=%s)",
+                      LAST_COMIC_ID)
 
         while True:
             try:
@@ -476,7 +485,8 @@ async def xkcd_check_loop(bot):
                 )
 
                 if current_id > LAST_COMIC_ID:
-                    await catch_up_missing_comics(bot, LAST_COMIC_ID + 1, current_id)
+                    await catch_up_missing_comics(bot, LAST_COMIC_ID + 1,
+                                                  current_id)
 
             except asyncio.CancelledError:
                 raise
@@ -508,8 +518,9 @@ async def xkcd_command(bot, sender_jid, nick, args, msg, is_room):
 
     lowered_args = [str(arg).lower() for arg in args]
 
-    # on/off/status are room-management actions and must be restricted explicitly.
-    # This now uses dict storage, consistent with the other room opt-in plugins.
+    # on/off/status are room-management actions and must be restricted
+    # explicitly. This now uses dict storage, consistent with the other
+    # room opt-in plugins.
     if await _core.handle_room_toggle_command(
         bot,
         msg,
@@ -532,13 +543,15 @@ async def xkcd_command(bot, sender_jid, nick, args, msg, is_room):
                 "ℹ️ XKCD is not enabled in this room.\n"
                 f"Use '{command_prefix}xkcd on' in a MUC DM to enable it.",
             )
-            log.info("[XKCD] Command blocked: XKCD not enabled in %s", from_jid)
+            log.info("[XKCD] Command blocked: XKCD not enabled in %s",
+                     from_jid)
             return
 
     # search command with pagination
     if lowered_args and lowered_args[0] == "search":
         if len(args) < 2:
-            bot.reply(msg, f"❌ Usage: {command_prefix}xkcd search <query> [page]")
+            bot.reply(msg,
+                      f"❌ Usage: {command_prefix}xkcd search <query> [page]")
             return
 
         page = 1
@@ -549,7 +562,8 @@ async def xkcd_command(bot, sender_jid, nick, args, msg, is_room):
             query = " ".join(str(arg) for arg in args[1:]).lower()
 
         if not query:
-            bot.reply(msg, f"❌ Usage: {command_prefix}xkcd search <query> [page]")
+            bot.reply(msg,
+                      f"❌ Usage: {command_prefix}xkcd search <query> [page]")
             return
 
         if page < 1:

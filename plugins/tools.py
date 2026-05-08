@@ -1,13 +1,13 @@
 """
-Tools plugin: Utility commands for bot interaction including ping/pong, message echo,
-timezone-aware time/date lookups, and Unix timestamp conversion.
+Tools plugin: Utility commands for bot interaction including ping/pong,
+message echo, timezone-aware time/date lookups, and Unix timestamp conversion.
 
 To use on/off/status to turn on/off or show the status of the plugin, use:
     {prefix}tools on|off|status
 
-Provides basic bot health checks, message echoing, and allows users to query the current
-time and date in their configured timezone or another user's timezone, as well as convert
-Unix timestamps.
+Provides basic bot health checks, message echoing, and allows users to
+query the current time and date in their configured timezone or another
+user's timezone, as well as convert Unix timestamps.
 
 Commands:
     {prefix}ping
@@ -52,7 +52,8 @@ async def information_command(bot, sender_jid, nick, args, msg, is_room):
         {prefix}tools on|off|status
     """
     if not args:
-        bot.reply(msg, f"Usage: {config.get('prefix', ',')}tools on|off|status")
+        bot.reply(msg,
+                  f"Usage: {config.get('prefix', ',')}tools on|off|status")
         return
 
     if is_room or _is_muc_pm(msg):
@@ -70,7 +71,8 @@ async def information_command(bot, sender_jid, nick, args, msg, is_room):
         if handled:
             return
 
-    bot.reply(msg, "Usage: {prefix}information on|off|status (in a room or PM)")
+    bot.reply(msg,
+              "Usage: {prefix}information on|off|status (in a room or PM)")
 
 
 async def get_tools_store(bot):
@@ -123,7 +125,8 @@ async def echo_command(bot, sender_jid, nick, args, msg, is_room):
 @command("time", role=Role.USER, aliases=["t"])
 async def time_command(bot, sender_jid, nick, args, msg, is_room):
     """
-    Show the current time in your configured timezone or another user's timezone.
+    Show the current time in your configured timezone or another user's
+    timezone.
 
     Usage:
         {prefix}time
@@ -141,14 +144,16 @@ async def time_command(bot, sender_jid, nick, args, msg, is_room):
             target_nick = " ".join(args).strip()
             info = nicks.get(target_nick)
             if not info or not info.get("jid"):
-                bot.reply(msg, f"🔴  Nick '{target_nick}' not found in this room.")
+                bot.reply(msg,
+                          f"🔴  Nick '{target_nick}' not found in this room.")
                 return
             target_jid = str(info["jid"])
             display_name = target_nick
         else:
             info = nicks.get(nick)
             if not info or not info.get("jid"):
-                bot.reply(msg, "🔴  Could not determine your JID in this room.")
+                bot.reply(msg,
+                          "🔴  Could not determine your JID in this room.")
                 return
             target_jid = str(info["jid"])
             display_name = nick
@@ -165,7 +170,8 @@ async def time_command(bot, sender_jid, nick, args, msg, is_room):
 
     if not timezone:
         bot.reply(msg, f"🟡️ No TIMEZONE set for {display_name}. Using UTC. "
-                       f"Set with {config.get('prefix', ',')}tz set <timezone>")
+                       f"Set with {config.get('prefix', ',')}tz set"
+                       " <timezone>")
         tzinfo = pytz.UTC
         tzone = "UTC"
     else:
@@ -180,13 +186,15 @@ async def time_command(bot, sender_jid, nick, args, msg, is_room):
     now = datetime.now(tzinfo)
     formatted = now.strftime("%Y-%m-%d %H:%M:%S")
     loc_str = ""
-    bot.reply(msg, f"⏰ Time for {display_name}: {formatted} {tzone}{loc_str}", ephemeral=False)
+    bot.reply(msg, f"⏰ Time for {display_name}: {formatted} {tzone}{loc_str}",
+              ephemeral=False)
 
 
 @command("date", role=Role.USER)
 async def date_command(bot, sender_jid, nick, args, msg, is_room):
     """
-    Show the current date in your configured timezone or another user's timezone.
+    Show the current date in your configured timezone or another user's
+    timezone.
 
     Usage:
         {prefix}date
@@ -204,7 +212,8 @@ async def date_command(bot, sender_jid, nick, args, msg, is_room):
             target_nick = " ".join(args).strip()
             info = nicks.get(target_nick)
             if not info or not info.get("jid"):
-                bot.reply(msg, f"🔴  Nick '{target_nick}' not found in this room.")
+                bot.reply(msg,
+                          f"🔴  Nick '{target_nick}' not found in this room.")
                 return
             target_jid = str(info["jid"])
             display_name = target_nick
@@ -228,7 +237,8 @@ async def date_command(bot, sender_jid, nick, args, msg, is_room):
 
     if not timezone:
         bot.reply(msg, f"🟡️ No TIMEZONE set for {display_name}. Using UTC. "
-                       f"Set with {config.get('prefix', ',')}tz set <timezone>")
+                       f"Set with {config.get('prefix', ',')}tz set"
+                       " <timezone>")
         tzinfo = pytz.UTC
         tzone = "UTC"
     else:
@@ -243,7 +253,9 @@ async def date_command(bot, sender_jid, nick, args, msg, is_room):
     now = datetime.now(tzinfo)
     formatted = now.strftime("%Y-%m-%d")
     loc_str = ""
-    bot.reply(msg, f"📅 Date for {display_name}: {formatted} ({tzone}){loc_str}", ephemeral=False)
+    bot.reply(msg,
+              f"📅 Date for {display_name}: {formatted} ({tzone}){loc_str}",
+              ephemeral=False)
 
 
 @command("utc", role=Role.USER)
@@ -281,7 +293,8 @@ async def timestamp_command(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if not args:
-        bot.reply(msg, f"🔴 Usage: {config.get('prefix', ',')}ts <unix_timestamp>")
+        bot.reply(msg,
+                  f"🔴 Usage: {config.get('prefix', ',')}ts <unix_timestamp>")
         return
 
     try:
@@ -309,8 +322,9 @@ async def timestamp_command(bot, sender_jid, nick, args, msg, is_room):
         formatted = dt_local.strftime("%Y-%m-%d %H:%M:%S")
         tzone = str(tzinfo) if timezone else "UTC"
 
-        bot.reply(msg, f"⏰ Timestamp {timestamp} = {formatted} ({tzone})", ephemeral=False)
+        bot.reply(msg, f"⏰ Timestamp {timestamp} = {formatted} ({tzone})",
+                  ephemeral=False)
     except (ValueError, OSError):
-        bot.reply(msg, f"🔴 Invalid timestamp or out of range.")
+        bot.reply(msg, "🔴 Invalid timestamp or out of range.")
     except Exception as e:
         bot.reply(msg, f"🔴 Error converting timestamp: {str(e)}")

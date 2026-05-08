@@ -116,7 +116,7 @@ async def tell_cmd(bot, sender_jid, sender_nick, args, msg, is_room):
 
     prefix = config.get("prefix", ",")
     if not is_room:
-        bot.reply(msg, f"This command is only available in groupchats.")
+        bot.reply(msg, "This command is only available in groupchats.")
         return
 
     raw_args = " ".join(args)

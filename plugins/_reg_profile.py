@@ -386,4 +386,5 @@ async def on_ready(bot):
     """
     # Set timezone on startup from config file
     store = bot.db.users.plugin("vcard")
-    await store.set(str(bot.boundjid.bare), "TIMEZONE", config.get("timezone", "UTC"))
+    await store.set(str(bot.boundjid.bare), "TIMEZONE", config.get("timezone",
+                                                                   "UTC"))

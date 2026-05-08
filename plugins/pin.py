@@ -216,7 +216,8 @@ async def _enabled_rooms(bot) -> dict[str, bool]:
 
 async def _sender_can_manage_pins_in_room(bot, msg, room_jid: str) -> bool:
     """
-    True if sender is moderator/admin/owner in this room (affiliation or role fallback).
+    True if sender is moderator/admin/owner in this room
+    (affiliation or role fallback).
     """
     nick = msg.get("mucnick") or msg["from"].resource or ""
     return await is_room_moderator_or_admin(bot, room_jid, str(nick))
@@ -236,7 +237,8 @@ def _format_pin_line(entry: dict[str, Any]) -> str:
     actor_nick = entry.get("actor_nick") or "unknown"
     created_at = _format_timestamp(entry.get("created_at"))
     target_nick = entry.get("target_nick") or "unknown"
-    preview = _trim_preview(entry.get("preview") or entry.get("target_text") or "—", max_lines=1, max_chars=240)
+    preview = _trim_preview(entry.get("preview") or entry.get("target_text")
+                            or "—", max_lines=1, max_chars=240)
     return f"• #{pin_id} by {actor_nick} at {created_at} | target: {target_nick} | {preview}"
 
 
@@ -431,11 +433,13 @@ async def _handle_reply_pin_add(bot, msg):
         source = "quote"
 
         if reply_id:
-            cached_entry = get_cached_message_by_id(CACHE_NAMESPACE, room, reply_id)
+            cached_entry = get_cached_message_by_id(CACHE_NAMESPACE,
+                                                    room, reply_id)
             if cached_entry:
                 target_text = cached_entry.get("body")
                 target_nick = cached_entry.get("nick") or "unknown"
-                target_stanza_id = cached_entry.get("stanza_id") or str(reply_id)
+                target_stanza_id = (cached_entry.get("stanza_id")
+                                    or str(reply_id))
                 source = "reply-cache"
 
         if not target_text and quote_text:
@@ -506,7 +510,8 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(
             msg,
             (
-                f"Usage: {_prefix()}pin add [last [n]] | {_prefix()}pin list [page] | "
+                f"Usage: {_prefix()}pin add [last [n]] | {_prefix()}pin "
+                "list [page] | "
                 f"{_prefix()}pin show <id> | "
                 f"{_prefix()}pin delete <id> | {_prefix()}pin on|off|status"
             ),
@@ -554,10 +559,12 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         pins.sort(key=lambda x: int(x.get("id", 0)), reverse=True)
 
         if not pins:
-            bot.reply(msg, "📌 No pinned messages stored for this room.", mention=False)
+            bot.reply(msg, "📌 No pinned messages stored for this room.",
+                      mention=False)
             return
 
-        page_items, page, total_pages, total = paginate_items(pins, page, PAGE_SIZE)
+        page_items, page, total_pages, total = paginate_items(pins, page,
+                                                              PAGE_SIZE)
 
         lines = [f"📌 Pins for {room} ({total}) - Page {page}/{total_pages}", ""]
         lines.extend(_format_pin_line(entry) for entry in page_items)
@@ -621,7 +628,8 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
 
         # permission guard
         if not await _sender_can_manage_pins_in_room(bot, msg, room):
-            bot.reply(msg, "⛔ Only room moderators/admins/owners can delete pins.", mention=False)
+            bot.reply(msg, "⛔ Only room moderators/admins/owners can delete pins.",
+                      mention=False)
             return
 
         if len(args) < 2:
@@ -666,7 +674,8 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
 
     # permission guard for manual add/add last
     if not await _sender_can_manage_pins_in_room(bot, msg, room):
-        bot.reply(msg, "⛔ Only room moderators/admins/owners can add pins.", mention=False)
+        bot.reply(msg, "⛔ Only room moderators/admins/owners can add pins.",
+                  mention=False)
         return
 
     if len(args) >= 2 and str(args[1]).lower() == "last":

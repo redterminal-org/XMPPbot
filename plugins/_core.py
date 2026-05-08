@@ -120,11 +120,21 @@ async def get_real_jid(bot, msg):
     if muc:
         room = getattr(msg["from"], "bare", None)
         nick = getattr(msg["from"], "resource", None)
-        # log.info("[CORE] Resolving real JID for room: %s, nick: %s", room, nick)
+        # log.info(
+        #     "[CORE] Resolving real JID for room: %s, nick: %s", room, nick
+        # )
         try:
-            result = JOINED_ROOMS.get(room, {}).get("nicks", {}).get(nick, {}).get("jid", None)
-        except Exception as e:
-            # log.warning("[CORE] 🟡 Error resolving real JID for %s in %s: %s", nick, room, e)
+            result = (
+                JOINED_ROOMS.get(room, {})
+                .get("nicks", {})
+                .get(nick, {})
+                .get("jid", None)
+            )
+        except Exception:
+            # log.warning(
+            #     "[CORE] 🟡 Error resolving real JID for %s in %s: %s",
+            #     nick, room, e
+            # )
             result = None
 
         # Fallback: try to resolve via UserManager's _nick_index if not found
@@ -169,7 +179,7 @@ async def _ensure_user_exists(bot, user_jid: str, nickname: str | None = None):
             raise
 
 
-#------------------------------------------------------------------------
+# ------------------------------------------------------------------------
 # Helper to get a user's timezone from their vCard, with robust error handling
 # and fallback to UTC if anything goes wrong (e.g., no vCard, missing TIMEZONE
 # field, invalid timezone name, database errors).
@@ -177,7 +187,9 @@ async def _ensure_user_exists(bot, user_jid: str, nickname: str | None = None):
 
 # RETURN the tzinfo object for a user's timezone, or UTC if not set/invalid
 async def get_user_tzinfo(bot, timezone_jid: str) -> datetime.tzinfo:
-    """Return the user's timezone as a tzinfo object, or UTC if not set/invalid."""
+    """
+    Return the user's timezone as a tzinfo object, or UTC if not set/invalid.
+    """
     tzname = await _get_user_timezone(bot, timezone_jid)
     try:
         return pytz.timezone(tzname)
@@ -188,6 +200,7 @@ async def get_user_tzinfo(bot, timezone_jid: str) -> datetime.tzinfo:
             tzname,
         )
         return pytz.timezone("UTC")
+
 
 # Get IANA timezone name from the user's vCard TIMEZONE field as a string
 async def _get_user_timezone(bot, timezone_jid: str | None) -> str:
@@ -234,7 +247,7 @@ async def _get_enabled_rooms(bot, key, plugin) -> dict:
 
 async def _is_enabled_for_room(bot, key, plugin, room_jid: str) -> bool:
     """Return True if the feature is enabled for the given room_jid, based on
-    the dict of {room_jid: True} stored in the global store under the given 
+    the dict of {room_jid: True} stored in the global store under the given
     key.
     """
     enabled = await _get_enabled_rooms(bot, key, plugin)
@@ -262,16 +275,17 @@ async def is_plugin_enabled_for_room(
     key: str,
     room_jid: str,
 ) -> bool:
-    """Return True if {key} enabled for room_jid in the plugin's global store."""
+    """Return True if {key} enabled for room_jid in the plugin's global store.
+    """
     store = await store_getter(bot)
     state = await store.get_global(key, default={})
     return isinstance(state, dict) and bool(state.get(room_jid))
 
 
 # ------------------------------------------------------------------------
-# Helper to parse duration strings like "2d5h3m20s" into total seconds. Supports
-# individual units (e.g., "10m") as well as combined formats. Returns None for
-# invalid formats or zero duration.
+# Helper to parse duration strings like "2d5h3m20s" into total seconds.
+# Supports individual units (e.g., "10m") as well as combined formats. Returns
+# None for invalid formats or zero duration.
 # ------------------------------------------------------------------------
 def parse_duration(duration_str: str) -> int | None:
     """Parse a duration string to seconds.
@@ -530,7 +544,9 @@ def get_cached_messages(namespace: str, room: str) -> list[dict[str, Any]]:
     return list(_SHARED_MESSAGE_CACHES[namespace][room])
 
 
-def get_last_cached_message(namespace: str, room: str) -> dict[str, Any] | None:
+def get_last_cached_message(
+    namespace: str, room: str
+) -> dict[str, Any] | None:
     """Return the last cached message entry for a namespace/room."""
     cache = _SHARED_MESSAGE_CACHES[namespace][room]
     if not cache:
@@ -538,7 +554,9 @@ def get_last_cached_message(namespace: str, room: str) -> dict[str, Any] | None:
     return cache[-1]
 
 
-def get_cached_message_by_id(namespace: str, room: str, msg_id: str) -> dict[str, Any] | None:
+def get_cached_message_by_id(
+    namespace: str, room: str, msg_id: str
+) -> dict[str, Any] | None:
     """Return a cached message entry by stanza_id for a namespace/room."""
     cache = _SHARED_MESSAGE_CACHES[namespace][room]
     if not cache:
@@ -553,9 +571,9 @@ def get_cached_message_by_id(namespace: str, room: str, msg_id: str) -> dict[str
 
 # ------------------------------------------------------------------------
 # Plugin helper for handling room-scoped on/off/status commands in MUC private
-# messages. This is a common pattern for plugins that have features which can be
-# enabled or disabled on a per-room basis, and we want to allow room admins to
-# control these settings via simple commands in the MUC DM.
+# messages. This is a common pattern for plugins that have features which can
+# be enabled or disabled on a per-room basis, and we want to allow room admins
+# to control these settings via simple commands in the MUC DM.
 # ------------------------------------------------------------------------
 
 _CONTROL_COMMANDS = {"on", "off", "status"}
@@ -584,8 +602,9 @@ async def is_room_moderator_or_admin(
     nick: str,
 ) -> bool:
     """
-    True if the occupant is admin/owner by MUC affiliation OR is a moderator/admin
-    by the bot's room-scoped role mapping (fallback via real JID).
+    True if the occupant is admin/owner by MUC affiliation OR is a
+    moderator/admin by the bot's room-scoped role mapping
+    (fallback via real JID).
     """
     occupant = _get_muc_occupant(room_jid, nick)
     if not occupant:
@@ -646,7 +665,11 @@ async def muc_pm_sender_can_manage_room(
         except Exception:
             log.exception("[CORE] Failed to resolve user role")
 
-    return False, room_jid, "⛔ Only room admins/owners can use on/off/status here."
+    return (
+        False,
+        room_jid,
+        "⛔ Only room admins/owners can use on/off/status here.",
+    )
 
 
 def _format_status(label: str, enabled: bool) -> str:

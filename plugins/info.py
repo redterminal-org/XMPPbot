@@ -8,13 +8,15 @@ This plugin provides various information commands:
 - Fetch an acronym's meaning, or add an acronym meaning not in the list
 
 Commands:
-    {prefix}wikipedia <search term> - lookup a summary for a term using Wikipedia
+    {prefix}wikipedia <search term> - lookup a summary for a term using
+                                      Wikipedia
     {prefix}fediverse <@user@instance> - fetch latest public toot from a
                                          Fediverse user
     {prefix}udict <term> - search Urban Dictionary for a term
     {prefix}acronyms <ACRONYM> - look up a chat acronym (like 'lgtm')
-    {prefix}acronym add <ACRONYM> <DESCRIPTION> - Will be reviewed before addition
-    {prefix}information on|off|status (to toggle in rooms)
+    {prefix}acronym add <ACRONYM> <DESCRIPTION> - Will be reviewed before
+                                                  addition
+    {prefix}info on|off|status - to toggle in rooms
 """
 
 import aiohttp
@@ -43,7 +45,8 @@ INFO_KEY = "INFORMATION"
 PLUGIN_META = {
     "name": "info",
     "version": "0.5.0",
-    "description": "Wikipedia, Fediverse, Urban Dictionary and acronym lookup.",
+    "description": "Wikipedia, Fediverse, Urban Dictionary and acronym "
+                   "lookup.",
     "category": "info",
     "requires": ["_core"],
 }
@@ -119,7 +122,9 @@ async def fediverse_latest(bot, sender_jid, nick, args, msg, is_room):
             )
             async with session.get(timeline_url, timeout=8) as resp:
                 if resp.status != 200:
-                    log.warning("[FEDIVERSE] 🔴  Could not fetch user timeline.")
+                    log.warning(
+                        "[FEDIVERSE] 🔴  Could not fetch user timeline."
+                    )
                     bot.reply(msg, "🔴  Could not fetch user timeline.")
                     return
                 statuses = await resp.json()
@@ -198,7 +203,8 @@ async def udict_search(bot, sender_jid, nick, args, msg, is_room):
         return
 
     entry = defs[0]
-    definition = entry.get("definition", "").replace("\r", "").replace("\n", " ")
+    definition = entry.get("definition", "").replace("\r", "").replace(
+        "\n", " ")
     example = entry.get("example", "").replace("\r", "").replace("\n", " ")
     thumbs_up = entry.get("thumbs_up", 0)
     thumbs_down = entry.get("thumbs_down", 0)
@@ -239,6 +245,7 @@ def fetch_wikipedia_summary(term):
             return data["titles"]["canonical"], "Disambiguation page", url
     return None
 
+
 @command("wikipedia", role=Role.USER, aliases=["wiki"])
 async def wikipedia_command(bot, sender_jid, nick, args, msg, is_room):
     """
@@ -278,9 +285,15 @@ async def wikipedia_command(bot, sender_jid, nick, args, msg, is_room):
 # ----------------- Chat Slang Lookup -----------------
 
 # --- Configuration ---
-SLANG_CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)), "chat_slang.csv")
-SLANG_ADDITIONS_CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)), "slang_additions.csv")
-SLANG_REMOVALS_CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)), "slang_removals.csv")
+SLANG_CSV = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "chat_slang.csv"
+)
+SLANG_ADDITIONS_CSV = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "slang_additions.csv"
+)
+SLANG_REMOVALS_CSV = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "slang_removals.csv"
+)
 
 log = logging.getLogger(__name__)
 
@@ -383,22 +396,35 @@ async def acronyms_cmd(bot, sender, nick, args, msg, is_room):
         return
 
     if not args:
-        return bot.reply(msg, f"Usage: {bot.prefix}acronyms <acronym>".format(bot.prefix))
+        return bot.reply(
+            msg,
+            f"Usage: {bot.prefix}acronyms <acronym>"
+        )
     query = args[0].strip().lower()
     definitions = all_main_descriptions(query)
     if definitions:
         lines = [f"{query.upper()}: {d}" for d in definitions]
-        log.info(f"[ACRONYMS] Returned {len(definitions)} definitions for acronym '{query}' from main list.")
+        log.info(
+            f"[ACRONYMS] Returned {len(definitions)} definitions for "
+            f"acronym '{query}' from main list."
+        )
         return bot.reply(msg, lines)
     else:
-        log.info(f"[ACRONYMS] User '{sender}' query '{query}' not found in main database.")
-        return bot.reply(msg, f"Sorry, '{query}' is not defined in my slang database.")
+        log.info(
+            f"[ACRONYMS] User '{sender}' query '{query}' not found in main "
+            f"database."
+        )
+        return bot.reply(
+            msg,
+            f"Sorry, '{query}' is not defined in my slang database."
+        )
 
 
 @command("acronyms add", aliases=["acro add", "acronym add"], role=Role.USER)
 async def acronyms_add_cmd(bot, sender, nick, args, msg, is_room):
     """
-    Suggest a new acronym/description. Entry will be reviewed by admins before becoming visible.
+    Suggest a new acronym/description. Entry will be reviewed by admins
+    before becoming visible.
 
     Usage:
         {prefix}acronyms add <acronym> <description>
@@ -411,26 +437,51 @@ async def acronyms_add_cmd(bot, sender, nick, args, msg, is_room):
         return
 
     if len(args) < 2:
-        return bot.reply(msg, f"Usage: {bot.prefix}acronyms add <acronym> <description>")
+        return bot.reply(
+            msg,
+            f"Usage: {bot.prefix}acronyms add <acronym> <description>"
+        )
     abbreviation = args[0].strip()
     description = " ".join(args[1:]).strip()
     if description_exists_in_main(abbreviation, description):
-        log.info(f"[ACRONYMS] {sender} tried to queue existing main def: {abbreviation}:{description}")
-        return bot.reply(msg, f"The definition for '{abbreviation}' already exists in the database.")
+        log.info(
+            f"[ACRONYMS] {sender} tried to queue existing main def: "
+            f"{abbreviation}:{description}"
+        )
+        return bot.reply(
+            msg,
+            f"The definition for '{abbreviation}' already exists in the "
+            f"database."
+        )
     if addition_exists(abbreviation, description):
-        log.info(f"[ACRONYMS] {sender} tried to queue existing pending addition: {abbreviation}:{description}")
-        return bot.reply(msg, f"This suggestion is already awaiting admin review.")
+        log.info(
+            f"[ACRONYMS] {sender} tried to queue existing pending addition: "
+            f"{abbreviation}:{description}"
+        )
+        return bot.reply(
+            msg,
+            "This suggestion is already awaiting admin review."
+        )
     os.makedirs(os.path.dirname(SLANG_ADDITIONS_CSV), exist_ok=True)
     with open(SLANG_ADDITIONS_CSV, "a", encoding="utf-8", newline="") as f:
         csv.writer(f).writerow([abbreviation, description, nick or sender])
-    log.info(f"[ACRONYMS] Queued new addition by {sender}/{nick}: {abbreviation}:{description}")
-    return bot.reply(msg, f"Suggestion for '{abbreviation}' was queued for admin review. Thank you!")
+    log.info(
+        f"[ACRONYMS] Queued new addition by {sender}/{nick}: "
+        f"{abbreviation}:{description}"
+    )
+    return bot.reply(
+        msg,
+        f"Suggestion for '{abbreviation}' was queued for admin review. "
+        f"Thank you!"
+    )
 
 
-@command("acronyms remove", aliases=["acro remove", "acronym remove"], role=Role.USER)
+@command("acronyms remove", aliases=["acro remove", "acronym remove"],
+         role=Role.USER)
 async def acronyms_remove_cmd(bot, sender, nick, args, msg, is_room):
     """
-    Suggest the removal of an existing acronym/description pair. Entry will be reviewed by admins.
+    Suggest the removal of an existing acronym/description pair. Entry will
+    be reviewed by admins.
 
     Usage:
         {prefix}acronyms remove <acronym> <description>
@@ -443,25 +494,46 @@ async def acronyms_remove_cmd(bot, sender, nick, args, msg, is_room):
         return
 
     if len(args) < 2:
-        return bot.reply(msg, f"Usage: {bot.prefix}acronyms remove <acronym> <description>")
+        return bot.reply(
+            msg,
+            f"Usage: {bot.prefix}acronyms remove <acronym> <description>"
+        )
     abbreviation = args[0].strip()
     description = " ".join(args[1:]).strip()
     if not description_exists_in_main(abbreviation, description):
-        return bot.reply(msg, f"That definition doesn't exist in the main list.")
+        return bot.reply(
+            msg,
+            "That definition doesn't exist in the main list."
+        )
     if removal_exists(abbreviation, description):
-        log.info(f"[ACRONYMS] {sender} tried to queue existing pending removal: {abbreviation}:{description}")
-        return bot.reply(msg, f"This removal is already awaiting admin review.")
+        log.info(
+            f"[ACRONYMS] {sender} tried to queue existing pending removal: "
+            f"{abbreviation}:{description}"
+        )
+        return bot.reply(
+            msg,
+            "This removal is already awaiting admin review."
+        )
     os.makedirs(os.path.dirname(SLANG_REMOVALS_CSV), exist_ok=True)
     with open(SLANG_REMOVALS_CSV, "a", encoding="utf-8", newline="") as f:
         csv.writer(f).writerow([abbreviation, description, nick or sender])
-    log.info(f"[ACRONYMS] Queued new removal by {sender}/{nick}: {abbreviation}:{description}")
-    return bot.reply(msg, f"Removal suggestion for '{abbreviation}' was queued for admin review. Thank you!")
+    log.info(
+        f"[ACRONYMS] Queued new removal by {sender}/{nick}: "
+        f"{abbreviation}:{description}"
+    )
+    return bot.reply(
+        msg,
+        f"Removal suggestion for '{abbreviation}' was queued for admin "
+        f"review. Thank you!"
+    )
 
 
-@command("acronyms list", aliases=["acro list", "acronym list"], role=Role.ADMIN)
+@command("acronyms list", aliases=["acro list", "acronym list"],
+         role=Role.ADMIN)
 async def acronyms_list_cmd(bot, sender, nick, args, msg, is_room):
     """
-    Display pending slang additions and removals with proposer nicknames for admin review.
+    Display pending slang additions and removals with proposer nicknames for
+    admin review.
 
     Usage:
         {prefix}acronyms list
@@ -479,13 +551,20 @@ async def acronyms_list_cmd(bot, sender, nick, args, msg, is_room):
         with open(SLANG_ADDITIONS_CSV, encoding="utf-8") as f:
             for row in csv.reader(f):
                 if len(row) >= 3:
-                    addition_lines.append(f"{row[0].upper()}: {row[1]} (by {row[2]})")
+                    addition_lines.append(
+                        f"{row[0].upper()}: {row[1]} (by {row[2]})"
+                    )
     if os.path.exists(SLANG_REMOVALS_CSV):
         with open(SLANG_REMOVALS_CSV, encoding="utf-8") as f:
             for row in csv.reader(f):
                 if len(row) >= 3:
-                    removal_lines.append(f"{row[0].upper()}: {row[1]} (by {row[2]})")
-    log.info(f"[ACRONYMS] Admin {sender} reviewed {len(addition_lines)} additions and {len(removal_lines)} removals.")
+                    removal_lines.append(
+                        f"{row[0].upper()}: {row[1]} (by {row[2]})"
+                    )
+    log.info(
+        f"[ACRONYMS] Admin {sender} reviewed {len(addition_lines)} "
+        f"additions and {len(removal_lines)} removals."
+    )
     sections = []
     if addition_lines:
         sections.append("Pending Additions:\n" + "\n".join(addition_lines))
@@ -497,10 +576,13 @@ async def acronyms_list_cmd(bot, sender, nick, args, msg, is_room):
         sections.append("No pending removals.")
     bot.reply(msg, "\n\n".join(sections))
 
-@command("acronyms merge", aliases=["acro merge", "acronym merge"], role=Role.ADMIN)
+
+@command("acronyms merge", aliases=["acro merge", "acronym merge"],
+         role=Role.ADMIN)
 async def acronyms_merge_cmd(bot, sender, nick, args, msg, is_room):
     """
-    Admin command to apply pending additions and removals to the main slang database.
+    Admin command to apply pending additions and removals to the main slang
+    database.
 
     Usage:
         {prefix}acronyms merge
@@ -528,7 +610,10 @@ async def acronyms_merge_cmd(bot, sender, nick, args, msg, is_room):
                 if len(row) >= 2:
                     acro, desc = row[0].strip(), row[1].strip()
                     removals.add((acro.lower(), desc.lower()))
-    kept_entries = [row for row in main_entries if (row[0].lower(), row[1].lower()) not in removals]
+    kept_entries = [
+        row for row in main_entries
+        if (row[0].lower(), row[1].lower()) not in removals
+    ]
     removed_count = len(main_entries) - len(kept_entries)
     # Additions
     new_add_count = 0
@@ -538,10 +623,15 @@ async def acronyms_merge_cmd(bot, sender, nick, args, msg, is_room):
                 if len(row) >= 2:
                     acro, desc = row[0].strip(), row[1].strip()
                     key = (acro.lower(), desc.lower())
-                    if key not in {(row[0].lower(), row[1].lower()) for row in kept_entries}:
+                    if key not in {
+                        (row[0].lower(), row[1].lower())
+                        for row in kept_entries
+                    }:
                         kept_entries.append([acro, desc])
                         new_add_count += 1
-                        log.info(f"[ACRONYMS] Added new slang: {acro}:{desc}")
+                        log.info(
+                            f"[ACRONYMS] Added new slang: {acro}:{desc}"
+                        )
     with open(SLANG_CSV, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         writer.writerows(kept_entries)
@@ -549,13 +639,23 @@ async def acronyms_merge_cmd(bot, sender, nick, args, msg, is_room):
         os.remove(SLANG_ADDITIONS_CSV)
     if os.path.exists(SLANG_REMOVALS_CSV):
         os.remove(SLANG_REMOVALS_CSV)
-    log.info(f"[ACRONYMS] Admin {sender} merged: +{new_add_count} additions, -{removed_count} removals.")
-    bot.reply(msg, f"Merged {new_add_count} additions and {removed_count} removals into the slang database.")
+    log.info(
+        f"[ACRONYMS] Admin {sender} merged: +{new_add_count} additions, "
+        f"-{removed_count} removals."
+    )
+    bot.reply(
+        msg,
+        f"Merged {new_add_count} additions and {removed_count} removals "
+        f"into the slang database."
+    )
 
-@command("acronyms delete", aliases=["acro delete", "acronym delete"], role=Role.ADMIN)
+
+@command("acronyms delete", aliases=["acro delete", "acronym delete"],
+         role=Role.ADMIN)
 async def acronyms_delete_cmd(bot, sender, nick, args, msg, is_room):
     """
-    Admin command to delete from the suggestions/removals queue by (acronym, description) or by nick.
+    Admin command to delete from the suggestions/removals queue by
+    (acronym, description) or by nick.
 
     Usage:
         {prefix}acronyms delete <acronym> <description>
@@ -571,7 +671,11 @@ async def acronyms_delete_cmd(bot, sender, nick, args, msg, is_room):
         return
 
     if not args:
-        return bot.reply(msg, f"Usage: {bot.prefix}acronyms delete <acronym> <description> OR {bot.prefix}acronyms delete <nick>")
+        return bot.reply(
+            msg,
+            f"Usage: {bot.prefix}acronyms delete <acronym> <description> OR "
+            f"{bot.prefix}acronyms delete <nick>"
+        )
     total_removed = 0
     if len(args) == 1:
         # Delete all additions/removals made by that nick
@@ -581,39 +685,70 @@ async def acronyms_delete_cmd(bot, sender, nick, args, msg, is_room):
                 return len(row) >= 3 and row[2].strip().lower() == nick_arg
             removed = delete_from_csv(fname, matchfunc)
             if removed:
-                log.info(f"[ACRONYMS] Admin {sender} deleted {removed} entries from {fname} for nick {nick_arg}")
+                log.info(
+                    f"[ACRONYMS] Admin {sender} deleted {removed} entries "
+                    f"from {fname} for nick {nick_arg}"
+                )
             total_removed += removed
         if total_removed:
-            bot.reply(msg, f"Deleted {total_removed} entries for nick '{args[0].strip()}' from pending additions/removals.")
+            bot.reply(
+                msg,
+                f"Deleted {total_removed} entries for nick "
+                f"'{args[0].strip()}' from pending additions/removals."
+            )
         else:
-            bot.reply(msg, f"No pending additions/removals found for nick '{args[0].strip()}'.")
+            bot.reply(
+                msg,
+                f"No pending additions/removals found for nick "
+                f"'{args[0].strip()}'."
+            )
     else:
         abbreviation = args[0].strip().lower()
         description = " ".join(args[1:]).strip().lower()
         for fname in (SLANG_ADDITIONS_CSV, SLANG_REMOVALS_CSV):
             def matchfunc(row):
-                return len(row) >= 2 and row[0].strip().lower() == abbreviation and row[1].strip().lower() == description
+                return (
+                    len(row) >= 2 and
+                    row[0].strip().lower() == abbreviation and
+                    row[1].strip().lower() == description
+                )
             removed = delete_from_csv(fname, matchfunc)
             if removed:
-                log.info(f"[ACRONYMS] Admin {sender} deleted {removed} entries from {fname} for {abbreviation}:{description}")
+                log.info(
+                    f"[ACRONYMS] Admin {sender} deleted {removed} entries "
+                    f"from {fname} for {abbreviation}:{description}"
+                )
             total_removed += removed
         if total_removed:
-            bot.reply(msg, f"Deleted {total_removed} entries for '{abbreviation}: {description}' from pending additions/removals.")
+            bot.reply(
+                msg,
+                f"Deleted {total_removed} entries for "
+                f"'{abbreviation}: {description}' from pending "
+                f"additions/removals."
+            )
         else:
-            bot.reply(msg, f"No pending addition/removal found for '{abbreviation}: {description}'.")
+            bot.reply(
+                msg,
+                f"No pending addition/removal found for "
+                f"'{abbreviation}: {description}'."
+            )
 
 # ----------------- Information Plugin Toggle -----------------
+
 
 @command("info", role=Role.MODERATOR)
 async def information_command(bot, sender_jid, nick, args, msg, is_room):
     """
-    Toggle information plugin features in the current room.
+    Toggle info plugin features in the current room.
 
     Usage:
         {prefix}info on|off|status
     """
     if not args:
-        bot.reply(msg, f"Usage: {config.get('prefix', ',')}info on|off|status")
+        bot.reply(
+            msg,
+            f"Usage: {config.get('prefix', ',')}info on|off|status"
+        )
         return
 
     if is_room or _is_muc_pm(msg):
@@ -631,7 +766,10 @@ async def information_command(bot, sender_jid, nick, args, msg, is_room):
         if handled:
             return
 
-    bot.reply(msg, "Usage: {prefix}information on|off|status (in a room or PM)")
+    bot.reply(
+        msg,
+        "Usage: {prefix}information on|off|status (in a room or PM)"
+    )
 
 
 async def get_info_store(bot):

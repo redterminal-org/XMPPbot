@@ -39,7 +39,6 @@ Limits:
 import asyncio
 import datetime
 import logging
-import re
 
 import pytz
 
@@ -58,7 +57,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "reminder",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "description": "Schedule and manage reminders",
     "category": "utility",
     "requires": ["_core", "rooms"],
@@ -124,7 +123,8 @@ def _timezone_lookup_jid(bot, sender_jid, msg, is_room: bool) -> str | None:
             if real_jid:
                 return _normalize_bare_jid(real_jid)
     except Exception as exc:
-        log.debug("[REMINDER] Could not resolve MUC real JID for timezone: %s", exc)
+        log.debug("[REMINDER] Could not resolve MUC real JID for timezone: %s",
+                  exc)
 
     try:
         room = msg["from"].bare
@@ -285,8 +285,9 @@ async def _is_reminder_enabled_for_context(bot, msg, is_room: bool) -> bool:
 async def _handle_reminder_control_command(bot, args, msg, is_room: bool) -> bool:
     """Handle reminder on/off/status.
 
-    Room contexts are delegated to utils.plugin_helper.handle_room_toggle_command.
-    Normal DMs control the global runtime kill-switch.
+    Room contexts are delegated to 
+    utils.plugin_helper.handle_room_toggle_command.  Normal DMs control
+    the global runtime kill-switch.
     """
     global REMINDER_ENABLED
 
@@ -358,7 +359,8 @@ async def _handle_reminder_control_command(bot, args, msg, is_room: bool) -> boo
             f"▶️ Reminder plugin enabled globally. "
             f"Restored {restored} pending reminder task(s).",
         )
-        log.info("[REMINDER] Plugin enabled globally; restored %s reminders", restored)
+        log.info("[REMINDER] Plugin enabled globally; restored %s reminders",
+                 restored)
         return True
 
     if not REMINDER_ENABLED:
@@ -372,7 +374,8 @@ async def _handle_reminder_control_command(bot, args, msg, is_room: bool) -> boo
         f"⏸️ Reminder plugin disabled globally. Pending reminders stay saved. "
         f"Cancelled {cancelled} active task(s).",
     )
-    log.info("[REMINDER] Plugin disabled globally; cancelled %s tasks", cancelled)
+    log.info("[REMINDER] Plugin disabled globally; cancelled %s tasks",
+             cancelled)
     return True
 
 
@@ -878,7 +881,8 @@ async def _restore_pending_reminders(bot) -> int:
 
         existing_task = ACTIVE_REMINDERS.get(reminder_id)
         if existing_task and not existing_task.done():
-            log.debug("[REMINDER] Reminder %s already scheduled; skipping", reminder_id)
+            log.debug("[REMINDER] Reminder %s already scheduled; skipping",
+                      reminder_id)
             continue
 
         if room_jid and not await _get_room_reminder_state(bot, room_jid):
@@ -947,7 +951,8 @@ async def _restore_pending_reminders(bot) -> int:
             )
 
     if restored > 0:
-        log.info("[REMINDER] ✅ Successfully restored %s pending reminders", restored)
+        log.info("[REMINDER] ✅ Successfully restored %s pending reminders",
+                 restored)
 
     return restored
 
@@ -1050,7 +1055,8 @@ async def remind_command(bot, sender_jid, nick, args, msg, is_room):
         )
 
         bot.reply(msg, f"✅ Reminder set! I'll remind you {display_when}")
-        log.info("[REMINDER] Created reminder %s for %s: %s", reminder_id, user_jid, message)
+        log.info("[REMINDER] Created reminder %s for %s: %s", reminder_id,
+                 user_jid, message)
 
     except Exception as exc:
         log.exception("[REMINDER] Error creating reminder: %s", exc)
@@ -1091,7 +1097,8 @@ async def list_reminders(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, "❌ Error retrieving reminders.")
 
 
-@command("remind delete", role=Role.USER, aliases=["remind rm", "remind cancel"])
+@command("remind delete", role=Role.USER,
+         aliases=["remind rm", "remind cancel"])
 async def delete_reminder(bot, sender_jid, nick, args, msg, is_room):
     """Delete or cancel a reminder by ID."""
     prefix = config.get("prefix", ",")
@@ -1143,7 +1150,10 @@ async def delete_reminder(bot, sender_jid, nick, args, msg, is_room):
 # ============================================================================
 
 async def on_ready(bot):
-    """Initialize the reminder table and restore pending reminders after startup/reload."""
+    """
+    Initialize the reminder table and restore pending reminders after
+    startup/reload.
+    """
     try:
         await _init_reminder_db(bot)
 
@@ -1164,7 +1174,8 @@ async def on_unload(bot):
         log.info("[REMINDER] Unloading reminder plugin...")
 
         cancelled = await _cancel_all_active_tasks()
-        log.info("[REMINDER] ✅ Plugin unloaded; cancelled %s task(s)", cancelled)
+        log.info("[REMINDER] ✅ Plugin unloaded; cancelled %s task(s)",
+                 cancelled)
 
     except Exception as exc:
         log.exception("[REMINDER] Error during plugin unload: %s", exc)

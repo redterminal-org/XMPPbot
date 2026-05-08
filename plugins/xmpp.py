@@ -6,16 +6,22 @@ servers and users, such as pinging a JID, querying service discovery info,
 checking compliance scores, and performing DNS SRV lookups.
 
 Commands:
-    {prefix}x <on|off|status>       - Toggle usage of XMPP commands in a room or show status.
+    {prefix}x <on|off|status>       - Toggle usage of XMPP commands in a room
+                                      or show status.
     {prefix}x help                  - Displays all available commands.
-    {prefix}x version <domain>      - Shows the software version of an XMPP server (XEP-0092).
-    {prefix}x items <domain|jid>    - Lists service items of an XMPP server (XEP-0030).
-    {prefix}x contact <domain>      - Displays admin/contact information for a server (XEP-0030).
+    {prefix}x version <domain>      - Shows the software version of an
+                                      XMPP server (XEP-0092).
+    {prefix}x items <domain|jid>    - Lists service items of an
+                                      XMPP server (XEP-0030).
+    {prefix}x contact <domain>      - Displays admin/contact information for a
+                                      server (XEP-0030).
     {prefix}x info <domain|jid>     - Shows identities & features (XEP-0030).
     {prefix}x ping <domain|jid>     - Pings an XMPP entity (XEP-0199).
-    {prefix}x uptime <domain>       - Shows the uptime of an XMPP server (XEP-0012).
+    {prefix}x uptime <domain>       - Shows the uptime of an XMPP server
+                                      (XEP-0012).
     {prefix}x srv <domain>          - DNS SRV lookup.
-    {prefix}x compliance <domain>   - Compliance score from compliance.conversations.im.
+    {prefix}x compliance <domain>   - Compliance score from
+                                      compliance.conversations.im.
 """
 import time
 import slixmpp
@@ -81,7 +87,8 @@ def _resolve_target(bot, args, msg, is_room, nick):
 
 def get_domain_from_jid(arg):
     """
-    Returns the domain part if an argument is a JID, otherwise returns the argument unchanged.
+    Returns the domain part if an argument is a JID, otherwise returns the
+    argument unchanged.
     """
     if "@" in arg:
         return arg.split("@", 1)[1]
@@ -211,7 +218,8 @@ async def cmd_xmpp_version(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"Note: 'version' only works with domains. Using '{target}' from '{args[0]}'.")
 
     try:
-        result = await bot.plugin["xep_0092"].get_version(jid=target, timeout=8)
+        result = await bot.plugin["xep_0092"].get_version(jid=target,
+                                                          timeout=8)
         name, version, os_info = None, None, None
         if hasattr(result, 'xml'):
             for child in result.xml:
@@ -276,7 +284,8 @@ async def cmd_xmpp_uptime(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"Note: 'uptime' only works with domains. Using '{target}' from '{args[0]}'.")
 
     try:
-        result = await bot.plugin["xep_0012"].get_last_activity(jid=target, timeout=8)
+        result = await bot.plugin["xep_0012"].get_last_activity(jid=target,
+                                                                timeout=8)
         seconds = result['last_activity']['seconds']
         days = seconds // 86400
         hours = (seconds % 86400) // 3600
@@ -592,7 +601,8 @@ async def cmd_xmpp_srv(bot, sender_jid, nick, args, msg, is_room):
         for service in services:
             srv_name = f"{service}.{domain}"
             try:
-                answers = dns.resolver.resolve(srv_name, 'SRV', raise_on_no_answer=False)
+                answers = dns.resolver.resolve(srv_name, 'SRV',
+                                               raise_on_no_answer=False)
 
                 if not answers:
                     srv_records[service] = "❌ Not found"

@@ -75,7 +75,8 @@ def _should_include_description(title: str, description: str, similarity_thresho
     Args:
         title: Entry title
         description: Entry description
-        similarity_threshold: Similarity score (0-1) above which they're considered duplicates
+        similarity_threshold: Similarity score (0-1) above which they're
+                              considered duplicates
 
     Returns:
         True if description is meaningfully different, False otherwise
@@ -122,7 +123,7 @@ def _extract_entry_link(entry) -> str:
     if "links" in entry and isinstance(entry.links, list):
         for link_obj in entry.links:
             if isinstance(link_obj, dict):
-                if link_obj.get("rel") in (None, "alternate"):  # None = default rel
+                if link_obj.get("rel") in (None, "alternate"):
                     href = link_obj.get("href")
                     if href and isinstance(href, str) and href.startswith(("http://", "https://")):
                         return href.strip()
@@ -246,7 +247,8 @@ async def fetch_feed(url):
     """
     Fetch and parse RSS feed with proper URL handling.
 
-    Prevents feedparser from modifying the feed URL through redirects or normalization.
+    Prevents feedparser from modifying the feed URL through redirects or
+    normalization.
 
     Args:
         url: Feed URL to fetch
@@ -285,7 +287,7 @@ async def rss_check_loop(bot, store, url, period):
 
         feed = feeds[url]
         feed_title = feed["title"]
-        feed_link = feed.get("link", url)  # Use feed link for relative URL resolution
+        feed_link = feed.get("link", url)
         last_id = feed.get("last_id")
         rooms = feed.get("rooms", [])
         error_count = feed.get("error_count", 0)

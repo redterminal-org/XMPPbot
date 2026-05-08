@@ -382,7 +382,8 @@ async def _can_manage_poll(bot, msg, is_room: bool, poll: dict) -> bool:
     return await _is_room_moderator_or_admin(bot, msg, is_room)
 
 
-async def _close_poll(bot, room_jid: str, poll_id: str | int, *, cancelled=False, announce=True) -> tuple[bool, str]:
+async def _close_poll(bot, room_jid: str, poll_id: str | int, *,
+                      cancelled=False, announce=True) -> tuple[bool, str]:
     data = await _get_data(bot)
     room = _room_bucket(data, room_jid)
     poll = _get_poll(room, poll_id)
@@ -445,11 +446,13 @@ async def _auto_close_after(bot, room_jid: str, poll_id: str, delay: int):
     key = (room_jid, poll_id)
     try:
         await asyncio.sleep(delay)
-        await _close_poll(bot, room_jid, poll_id, cancelled=False, announce=True)
+        await _close_poll(bot, room_jid, poll_id, cancelled=False,
+                          announce=True)
     except asyncio.CancelledError:
         raise
     except Exception:
-        log.exception("[POLL] Failed to auto-close poll #%s in %s", poll_id, room_jid)
+        log.exception("[POLL] Failed to auto-close poll #%s in %s",
+                      poll_id, room_jid)
     finally:
         AUTO_CLOSE_TASKS.pop(key, None)
 
@@ -467,7 +470,10 @@ def _schedule_auto_close(bot, room_jid: str, poll: dict):
         return
 
     delay = max(0, int(ends_at) - _now())
-    AUTO_CLOSE_TASKS[key] = asyncio.create_task(_auto_close_after(bot, room_jid, poll_id, delay))
+    AUTO_CLOSE_TASKS[key] = asyncio.create_task(_auto_close_after(bot,
+                                                                  room_jid,
+                                                                  poll_id,
+                                                                  delay))
 
 
 async def _restore_auto_close_tasks(bot):
@@ -488,7 +494,8 @@ async def _restore_auto_close_tasks(bot):
                 continue
 
             if ends_at <= _now():
-                await _close_poll(bot, room_jid, poll_id, cancelled=False, announce=True)
+                await _close_poll(bot, room_jid, poll_id, cancelled=False,
+                                  announce=True)
                 continue
 
             _schedule_auto_close(bot, room_jid, poll)

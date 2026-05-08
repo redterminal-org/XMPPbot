@@ -137,7 +137,6 @@ async def on_groupchat_message(bot, msg):
     if room not in enabled_rooms:
         return
 
-
     text = msg.get("body", "")
     thread_id = msg.get("thread") or msg.get("id")
 
@@ -189,7 +188,8 @@ async def on_groupchat_message(bot, msg):
         # else add it to _url_timestamps[room] with current timestamp
         if url in _url_timestamps[room]:
             log.info(f"[URLCHECK] 🟡 Fetching '{url}' temporary disabled")
-            _url_timestamps[room][url] = now  # update timestamp to extend block
+            # update timestamp to extend block
+            _url_timestamps[room][url] = now
             continue
         _url_timestamps[room][url] = now
 
@@ -258,7 +258,8 @@ async def on_groupchat_message(bot, msg):
             if is_ok and title:
                 _body = f"[URL] {html.unescape(title)} {st} - ({final_url})"
                 if mdesc and isinstance(mdesc, str):
-                    # Only include the first 2 non-empty lines (preserves short descs).
+                    # Only include the first 2 non-empty lines
+                    # (preserves short descs).
                     lines = [line.strip() for line in mdesc.splitlines() if line.strip()]
                     short_desc = "\n".join(lines[:2])
                     _body += f"\nDesc: '{html.unescape(short_desc)}'"
@@ -362,7 +363,8 @@ def fetch_url_title(url, max_redirects=5):
 
     try:
         for _ in range(max_redirects):
-            resp = session.get(url, allow_redirects=False, timeout=8, stream=True)
+            resp = session.get(url, allow_redirects=False, timeout=8,
+                               stream=True)
             status = resp.status_code
             ctype = resp.headers.get("Content-Type", "")
             content_size = resp.headers.get("Content-Length")
@@ -378,11 +380,12 @@ def fetch_url_title(url, max_redirects=5):
 
             # Only try to find title/desc in text/html
             if "text/html" in ctype:
-                #max_read = 65536  # 64KB max
+                # max_read = 65536  # 64KB max
                 buffer = ""
                 title_found = None
                 desc_found = None
-                for chunk in resp.iter_content(chunk_size=8192, decode_unicode=True):
+                for chunk in resp.iter_content(chunk_size=8192,
+                                               decode_unicode=True):
                     buffer += chunk
                     if title_found is None:
                         title_found, _ = extract_html_title_desc(buffer)
@@ -390,8 +393,8 @@ def fetch_url_title(url, max_redirects=5):
                         _, desc_found = extract_html_title_desc(buffer)
                     if title_found and desc_found:
                         break
-                    #if len(buffer) >= max_read:
-                    #    break
+                    # if len(buffer) >= max_read:
+                    #     break
                 final_url = resp.url
                 if orig_fragment:
                     parsed_final = urlparse(final_url)

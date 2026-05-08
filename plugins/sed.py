@@ -83,7 +83,8 @@ def _room_key_from_msg(msg, is_room: bool) -> str:
 # SED PARSING
 # ============================================================================
 
-def read_until_delimiter(raw_statement: str, delimiter: str, require: bool = True):
+def read_until_delimiter(raw_statement: str, delimiter: str,
+                         require: bool = True):
     """Read until an unescaped delimiter is found."""
     value = ""
 
@@ -144,7 +145,9 @@ def _command_prefix() -> str:
 
 
 def parse_prefixed_sed_command(text: str):
-    """Parse '{prefix}sed <pattern> <replacement> [flags]' with shell-like quoting.
+    """
+    Parse '{prefix}sed <pattern> <replacement> [flags]' with shell-like
+    quoting.
 
     Examples:
         ,sed foo bar
@@ -227,7 +230,8 @@ def is_sed_command(body: str) -> bool:
 # REGEX APPLICATION
 # ============================================================================
 
-def _regex_worker(result_queue, original_text, pattern, replacement, flags_str):
+def _regex_worker(result_queue, original_text, pattern, replacement,
+                  flags_str):
     """Run regex substitution in a child process.
 
     This gives us a real timeout: the parent can terminate the process.
@@ -270,7 +274,8 @@ def _regex_worker(result_queue, original_text, pattern, replacement, flags_str):
         result_queue.put(("error", str(exc), 0))
 
 
-def apply_sed(original_text: str, pattern: str, replacement: str, flags_str: str):
+def apply_sed(original_text: str, pattern: str, replacement: str,
+              flags_str: str):
     """Apply sed substitution with hard timeout protection.
 
     Returns:
@@ -319,7 +324,8 @@ def apply_sed(original_text: str, pattern: str, replacement: str, flags_str: str
                 process.kill()
                 process.join(0.2)
 
-            log.warning("[SED] Regex timeout - possible ReDoS pattern=%r", pattern)
+            log.warning("[SED] Regex timeout - possible ReDoS pattern=%r",
+                        pattern)
             return None, -1
 
         try:
@@ -336,7 +342,8 @@ def apply_sed(original_text: str, pattern: str, replacement: str, flags_str: str
             log.debug("[SED] Regex error for pattern=%r: %s", pattern, value)
             return None, 0
 
-        log.warning("[SED] Regex worker error for pattern=%r: %s", pattern, value)
+        log.warning("[SED] Regex worker error for pattern=%r: %s", pattern,
+                    value)
         return None, 0
 
     except Exception as exc:
@@ -401,7 +408,8 @@ async def process_sed_correction(
         last_msg = get_last_message(room)
 
     if not last_msg:
-        _sed_reply(bot, msg, "❌ No previous message found to correct.", is_room)
+        _sed_reply(bot, msg,
+                   "❌ No previous message found to correct.", is_room)
         return
 
     new_msg, num_replacements = apply_sed(

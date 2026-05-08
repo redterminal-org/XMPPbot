@@ -491,7 +491,8 @@ async def cmd_room_plugins(bot, sender_jid, nick, args, msg, is_room):
     Usage: {prefix}room plugins
     """
     if is_room:
-        bot.reply(msg, "🔴 This command can only be used in MUC PMs to the bot.")
+        bot.reply(msg,
+                  "🔴 This command can only be used in MUC PMs to the bot.")
         return
     if len(args) != 0:
         bot.reply(msg, f"🟡️ Usage: {bot.prefix}room plugins")
@@ -731,7 +732,8 @@ async def rooms_delete(bot, sender_jid, nick, args, msg, is_room):
                 nick_to_leave = room_data.get("nick")
                 if nick_to_leave:
                     try:
-                        bot.plugin["xep_0045"].leave_muc(room_jid, nick_to_leave)
+                        bot.plugin["xep_0045"].leave_muc(room_jid,
+                                                         nick_to_leave)
                     except Exception as e:
                         log.warning(f"[ROOMS] Error leaving room: {e}")
 

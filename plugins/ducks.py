@@ -11,7 +11,8 @@ This plugin only works in:
 It does not support normal 1:1 direct messages.
 
 Commands:
-    {prefix}duck on|off|status        - Enable/disable ducks in this room (MUC DM only)
+    {prefix}duck on|off|status        - Enable/disable ducks in this room
+                                        (MUC DM only)
     {prefix}duck befriend             - Befriend the current duck
     {prefix}duck trap                 - Trap the current duck
     {prefix}duck friends              - Show top duck friends
@@ -304,11 +305,13 @@ async def _get_top(bot, stat_key, limit=10):
                 "display_name": data.get("display_name", user_jid),
                 "count": 0,
             })
-            entry["display_name"] = data.get("display_name", entry["display_name"])
+            entry["display_name"] = data.get("display_name",
+                                             entry["display_name"])
             entry["count"] += int(data.get(stat_key, 0))
 
     entries = list(combined.values())
-    entries.sort(key=lambda item: (-item["count"], item["display_name"].lower()))
+    entries.sort(key=lambda item: (-item["count"],
+                                   item["display_name"].lower()))
     return entries[:limit]
 
 
@@ -522,7 +525,8 @@ async def _handle_duck_action(bot, msg, action):
         ),
     )
 
-    log.info("[DUCKS] %s (%s) %s a duck in %s", display_name, user_jid, verb, room_jid)
+    log.info("[DUCKS] %s (%s) %s a duck in %s", display_name, user_jid,
+             verb, room_jid)
 
 
 @command("duck", role=Role.USER)

@@ -57,14 +57,16 @@ ANNOUNCED_TODAY: dict[tuple[str, str], str] = {}
 # Background task for periodic birthday checks
 _BIRTHDAY_CHECK_TASK: asyncio.Task | None = None
 
-# How long cached BDAY lookup results are trusted before refreshing from live vCard.
-# This caches both positive results and explicit "no BDAY found" results.
+# How long cached BDAY lookup results are trusted before refreshing from live
+# vCard. This caches both positive results and explicit "no BDAY found"#
+# results.
 BDAY_CACHE_TTL_SECONDS = 12 * 60 * 60
 
 # Delay the first full scan so plugin startup does not block the bot.
 INITIAL_SCAN_DELAY_SECONDS = 10
 
-# Check whether a new day has started. The full room scan only runs once per day.
+# Check whether a new day has started. The full room scan only runs once per
+# day.
 CHECK_LOOP_INTERVAL_SECONDS = 60 * 60
 
 
@@ -296,8 +298,9 @@ async def _get_cached_bday(bot, user_jid: str):
 async def _set_cached_bday(bot, user_jid: str, birthday, nick: str | None = None):
     """Store BDAY lookup result in this plugin's DB cache.
 
-    This stores positive results and explicit negative results. It should not be
-    called for transport errors where we do not know whether the user has a BDAY.
+    This stores positive results and explicit negative results. It should
+    not be called for transport errors where we do not know whether the
+    user has a BDAY.
     """
     await _ensure_user_exists(bot, user_jid, nickname=nick)
 
@@ -447,7 +450,8 @@ async def _check_user_birthday(bot, user_jid_str: str, nick: str, room_jid):
             )
             await bot._safe_send_message(msg)
         except Exception as exc:
-            log.exception("[BIRTHDAY] Failed to send birthday message: %s", exc)
+            log.exception("[BIRTHDAY] Failed to send birthday message: %s",
+                          exc)
             return
 
         await _mark_announced(bot, room_jid_str, user_jid_str, today_str)
@@ -469,7 +473,8 @@ async def _check_room_birthdays(bot, room_jid: str):
     try:
         room_jid = str(room_jid)
 
-        enabled = await _is_enabled_for_room(bot, "birthday_notify", "birthday_notify", room_jid)
+        enabled = await _is_enabled_for_room(bot, "birthday_notify",
+                                             "birthday_notify", room_jid)
         if not enabled:
             return
 
@@ -523,8 +528,8 @@ async def _birthday_check_loop(bot, check_interval: int = CHECK_LOOP_INTERVAL_SE
     """Periodic task that checks for birthdays.
 
     The first full scan is delayed so the bot can finish startup quickly. After
-    that, a full scan is performed once per calendar day. Join events still check
-    users immediately, so late joiners are covered.
+    that, a full scan is performed once per calendar day. Join events still
+    check users immediately, so late joiners are covered.
     """
     last_full_check_date: str | None = None
 
@@ -567,7 +572,8 @@ async def on_muc_presence(bot, pres):
 
         user_jid_str = str(jid.bare)
 
-        enabled = await _is_enabled_for_room(bot, "birthday_notify", "birthday_notify", str(room_jid))
+        enabled = await _is_enabled_for_room(bot, "birthday_notify",
+                                             "birthday_notify", str(room_jid))
         if not enabled:
             return
 

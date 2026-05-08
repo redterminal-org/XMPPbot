@@ -323,8 +323,10 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
 
     bot.reply(msg, lines)
 
+
 @command("help inroom", role=Role.USER, aliases=["h inroom"])
-async def help_inroom_command(bot, sender_jid, sender_nick, args, msg, is_room):
+async def help_inroom_command(bot, sender_jid, sender_nick,
+                              args, msg, is_room):
     """
     Toggles usage of help inside a particular chat room.
     This is stored on a per-room basis and does not affect private messages.

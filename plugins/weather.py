@@ -112,7 +112,8 @@ async def weather_command(bot, sender_jid, nick, args, msg, is_room):
             if target_nick not in nicks:
                 log.info((f"[WEATHER] Lookup failed: Nick '{target_nick}'"
                          f"not found in room {muc_jid}"))
-                bot.reply(msg, f"🔴  Nick '{target_nick}' not found in this room.")
+                bot.reply(msg,
+                          f"🔴  Nick '{target_nick}' not found in this room.")
                 return
             jid = nicks[target_nick].get("jid", None)
             display_name = target_nick
@@ -158,7 +159,8 @@ async def weather_command(bot, sender_jid, nick, args, msg, is_room):
             if target_nick not in nicks:
                 log.info((f"[WEATHER] Lookup failed: Nick '{target_nick}'"
                          f"not found in room {muc_jid}"))
-                bot.reply(msg, f"🔴  Nick '{target_nick}' not found in this room.")
+                bot.reply(msg,
+                          f"🔴  Nick '{target_nick}' not found in this room.")
                 return
             jid = nicks[target_nick].get("jid", None)
             display_name = target_nick

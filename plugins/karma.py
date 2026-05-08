@@ -7,7 +7,8 @@ Provides simple room-local karma tracking using patterns like:
     nick--
 
 Control:
-    {prefix}karma on|off|status   - Enable/disable karma in this room (MUC DM only)
+    {prefix}karma on|off|status   - Enable/disable karma in this room
+                                    (MUC DM only)
 
 Queries:
     {prefix}karma <nick>          - Show karma for a nick in this room
@@ -340,7 +341,8 @@ async def on_message(bot, msg):
         if bot_nick and actor_nick.lower() == bot_nick.lower():
             return
 
-        if not await _is_enabled_for_room(bot, KARMA_ENABLED_KEY, "karma", room_jid):
+        if not await _is_enabled_for_room(bot, KARMA_ENABLED_KEY,
+                                          "karma", room_jid):
             return
 
         events = _extract_karma_events(body, room_jid)
