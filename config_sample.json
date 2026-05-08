@@ -2,9 +2,11 @@
   "_comment0": "Keys in the form of '_comment<num>' are comments to this json document and they are ignored. But DON'T PUT COMMENTS IN YOUR 'vcard' DEFINITION!",
 
   "_comment1": "These are the general configuration keys, you should use all of them and adjust them to your bots XMPP account",
-  "jid": "bluebot@domain.tld",
+
+  "jid": "<botname>@domain.tld",
   "password": "<password>",
-  "nick": "bluebot",
+  "nick": "<bot nick>",
+  "_comment1_1": "The 'timezone' key holds the timezone for the bot. It is used for the reminder plugin and for displaying times in the 'time' command for example. You can find a list of valid timezones at https://en.wikipedia.org/wiki/List_of_tz_database_time_zones. Use the 'TZ identifier' from the list.",
   "timezone": "Europe/Berlin",
 
   "_comment2": "The 'owner' key holds the bare XMPP JID of the allmighty owner of the bot for administration",
@@ -16,22 +18,21 @@
   "_comment4": "The 'db' key holds the name of the database file. It will be stored in the bots main directory you cloned",
   "db": "bot.db",
 
+  "_comment5": "Your Stands4 API key and user id for the 'acronyms' command. You can get them for free at https://www.stands4.com/services/v2/apikeys/ if you want to use this command. The free tier is limited to 100 queries a day.",
+  "stands4_api_key": "<your api key>",
+  "stands4_user_id": "<your user id>",
 
-  "_comment6": "Your YouTube API key for getting Information about Videos with the urlcheck plugin",
+  "_comment6": "Your YouTube API key for getting Information about Videos with the urlcheck plugin, I'll try to use the yt-dlp cli command when I get a chance. These API keys are A PITA to get.",
   "youtube_api_key": "<your_youtube_api_key>",
 
   "_comment7": "Avatar image name and type. Types may only be 'image/jpeg' and 'image/png' AFAIK",
   "avatar": "avatar.jpg",
   "avatar_type": "image/jpeg",
 
-  "_comment8": "The XMPP temp-vcard in JSON format. Look at https://xmpp.org/extensions/xep-0054.html for which fields you can use and how they're structured. These are the ones I know they work. You don't need to use all of them. If you want to use more than one NOTE/EMAIL/URL/WHATEVER, you have to find out how to put them in json format in the slixmpp documentation.",
+  "_comment8": "The XMPP temp-vcard in JSON format. Look at https://xmpp.org/extensions/xep-0054.html for which fields you can use and how they're structured. These are the ones I know they work. You don't need to use all of them. If you want to use more than one NOTE/EMAIL/URL/WHATEVER, you have to find out how to put them in json format in the slixmpp documentation. At the moment you can only use *one* URL, EMAL, NOTE or any other field. I'll try to fix this some time.",
   "vcard": {
     "FN": "Blue Bot",
     "NICKNAME": "bluebot",
-    "N": {
-      "FAMILY": "Bot",
-      "GIVEN": "Blue"
-    },
     "BDAY": "2026-03-05",
     "ORG": {
       "ORGNAME": "Example Org",
@@ -50,5 +51,5 @@
 
 
   "_comment101": "Maximum age for reminders in days. Reminders older than this will be rejected.",
-  "reminder_max_age_days": 365,
+  "reminder_max_age_days": 365
 }

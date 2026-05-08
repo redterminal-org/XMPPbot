@@ -5,11 +5,13 @@ This plugin provides various information commands:
 - Wikipedia summary lookup
 - Fetch latest toot from a Fediverse user
 - Urban Dictionary term search
+- Fetch an acronym's meaning (Limited to 100 requests per day, so use wisely!)
 
 Commands:
     {prefix}wikipedia <search term>
     {prefix}fediverse <@user@instance>
     {prefix}udict <term>
+    {prefix}acronyms <ACRONYM>
     {prefix}information on|off|status (to toggle in rooms)
 """
 
@@ -19,6 +21,7 @@ import requests
 import html
 import logging
 import re
+import xml.etree.ElementTree as ET
 
 from bs4 import BeautifulSoup
 
@@ -268,6 +271,142 @@ async def wikipedia_command(bot, sender_jid, nick, args, msg, is_room):
     else:
         bot.reply(msg, f"No Wikipedia summary found for '{term}'.")
 
+# ---------------- Acronyms (Stands4) ----------------
+
+STANDS4_API_BASE = "https://www.stands4.com/api.php"
+STANDS4_API_KEY = config.get("stands4_api_key", "")  # Add to your config!
+STANDS4_USER_ID = config.get("stands4_user_id", "")  # Add to your config!
+
+
+@command("acronyms", role=Role.USER, aliases=["acro"])
+async def acronyms_lookup(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Look up the meaning of an acronym using the Stands4.com API.
+
+    Usage:
+        {prefix}acronyms NASA
+        {prefix}acro NASA
+    """
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ Acronym lookup is disabled in this room.")
+        return
+
+    if not args:
+        bot.reply(msg, f"🟡️ Usage: {config.get('prefix', ',')}acronyms <ACRONYM>")
+        return
+
+    term = " ".join(args).strip()
+    params = {
+        "uid": STANDS4_USER_ID,
+        "tokenid": STANDS4_API_KEY,
+        "cmd": "acronym",
+        "term": term,
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(STANDS4_API_BASE, params=params, timeout=8) as resp:
+                if resp.status != 200:
+                    log.warning("[ACRONYM] 🔴  Failed to fetch acronym data.")
+                    bot.reply(msg, "🔴  Failed to fetch acronym information.")
+                    return
+                xml_text = await resp.text()
+                root = ET.fromstring(xml_text)
+
+        defs = []
+        for item in root.findall(".//result"):
+            name = item.findtext("name", "")
+            definition = item.findtext("definition", "")
+            if name and definition:
+                defs.append(f"• {name}: {definition}")
+        if not defs:
+            bot.reply(msg, f"ℹ️ No expansions found for '{term}'.")
+            return
+
+        lines = [f"🔤 Acronyms for '{term}':"] + defs[:3]
+        if len(defs) > 3:
+            lines.append("… (truncated)")
+        bot.reply(msg, lines)
+    except Exception:
+        log.exception("[ACRONYM] 🚨 Error fetching from Stands4 API.")
+        bot.reply(msg, "🔴  Error fetching acronym information.")
+
+
+# ----------------- Acronyms (Stands4) ----------------
+
+STANDS4_API_BASE = "https://www.stands4.com/services/v2/abbr.php"
+STANDS4_API_KEY = config.get("stands4_api_key", "")  # Add to your config!
+STANDS4_USER_ID = config.get("stands4_user_id", "")  # Add to your config!
+
+@command("acronyms", role=Role.USER, aliases=["acro"])
+async def acronyms_lookup(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Look up the meaning of an acronym using the Stands4.com API. It's limited
+    to 100 requests per day, so use wisely!
+
+    Usage:
+        {prefix}acronyms NASA
+        {prefix}acro NASA
+    """
+    enabled_rooms = await _get_enabled_rooms(bot, INFO_KEY, "information")
+    if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
+        bot.reply(msg, "ℹ️ Acronym lookup is disabled in this room.")
+        return
+
+    if not STANDS4_API_KEY or not STANDS4_USER_ID:
+        log.warning("[ACRONYM] 🟡️ Stands4 API credentials not configured.")
+        bot.reply(msg, "🔴 Acronym lookup is not configured.")
+        return
+
+    if not args:
+        bot.reply(msg, f"🟡️ Usage: {config.get('prefix', ',')}acronyms <ACRONYM>")
+        return
+
+    term = " ".join(args).strip()
+    params = {
+        "uid": STANDS4_USER_ID,
+        "tokenid": STANDS4_API_KEY,
+        "format": "xml",
+        "term": term,
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(STANDS4_API_BASE, params=params, timeout=8) as resp:
+                if resp.status != 200:
+                    log.warning("[ACRONYM] 🔴 Failed to fetch acronym data.")
+                    bot.reply(msg, "🔴 Failed to fetch acronym information.")
+                    return
+                xml_text = await resp.text()
+
+        root = ET.fromstring(xml_text)
+        defs = []
+        for item in root.findall(".//result"):
+            found_term = item.findtext("term", "")
+            definition = item.findtext("definition", "")
+            category = item.findtext("category", "")
+            if found_term and definition:
+                if category:
+                    defs.append(f"• {found_term}: {definition} [{category}]")
+                else:
+                    defs.append(f"• {found_term}: {definition}")
+
+        if not defs:
+            bot.reply(msg, f"ℹ️ No expansions found for '{term}'.")
+            return
+
+        lines = [f"🔤 Acronyms for '{term}':"] + defs[:6]
+        if len(defs) > 6:
+            lines.append("… (truncated)")
+        bot.reply(msg, lines)
+
+    except Exception:
+        log.exception("[ACRONYM] 🚨 Error fetching from Stands4 API.")
+        bot.reply(msg, "🔴 Error fetching acronym information.")
+
+
+# ----------------- Information Plugin Toggle -----------------
 
 @command("information", role=Role.MODERATOR)
 async def information_command(bot, sender_jid, nick, args, msg, is_room):
