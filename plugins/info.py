@@ -367,7 +367,9 @@ async def abbreviation_add_cmd(bot, sender, nick, args, msg, is_room):
         return bot.reply(msg, f"Usage: {config.get('prefix', ',')}acronym add"
                          "<abbreviation> <description>")
     abbreviation = args[0].strip()
+    abbreviation = abbreviation.replace(",", " ")
     description = " ".join(args[1:]).strip()
+    description = description.replace(",", " ")
     if description_exists_anywhere(abbreviation, description):
         log.info(f"[ACRONYMS] {sender} tried to queue existing def: {abbreviation}:{description}")
         return bot.reply(msg, f"'{abbreviation}' with that description is already in the database.")
