@@ -56,7 +56,7 @@ def parse_nick_and_message(args_str):
         return None, None
     nick, message = args_str.split(":", 1)
     nick = nick.strip()
-    message = message.lstrip()
+    message = message.strip()
     if not nick or not message:
         return None, None
     return nick, message
@@ -120,7 +120,8 @@ async def tell_cmd(bot, sender_jid, sender_nick, args, msg, is_room):
         return
 
     raw_args = " ".join(args)
-    rec_nick, message = parse_nick_and_message(raw_args)
+    m = msg["body"].replace(f"{prefix}tell ", "", 1).strip()
+    rec_nick, message = parse_nick_and_message(m)
     if not rec_nick or not message:
         bot.reply(msg, f"Usage: {prefix}tell <nick>: <message>")
         return
