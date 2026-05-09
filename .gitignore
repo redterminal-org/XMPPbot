@@ -6,6 +6,7 @@ tmp/
 .pytest_cache/
 .coverage
 config.json
+vcard.py
 delete_vcard.py
 profile_hash.asc
 avatar_hash.asc

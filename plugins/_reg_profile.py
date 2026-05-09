@@ -11,7 +11,7 @@ and sets the vCard and the Avatar if they've changed.
 
 Responsibilities
 ----------------
-• Publish or update the bot vCard (XEP-0054)
+• Publish or update the bot vCard (from vcard.py)
 • Publish or update the bot avatar (XEP-0084)
 • Do Avatar publishing using PEP (Personal Eventing Protocol) (XEP-0163)
 • Avoid unnecessary updates using SHA1 hash comparison
@@ -28,12 +28,14 @@ import hashlib
 import json
 import logging
 import os
+import importlib.util
 
+from slixmpp.xmlstream import ET
 from utils.config import config
 
 PLUGIN_META = {
     "name": "_reg_profile",
-    "version": "0.2.2",
+    "version": "0.3.0",
     "description": "Bot avatar and vCard profile management",
     "category": "core",
 }
@@ -167,59 +169,45 @@ def build_vcard(card, data):
 # -------------------------------------------------
 async def update_vcard(bot):
     """
-    Update the XMPP vCard if the configuration has changed.
-
-    Parameters
-    ----------
-    bot : Bot
-        Instance of the bot class derived from the Slixmpp client.
-
-    Process
-    -------
-    1. Retrieve the vCard configuration from ``config``.
-    2. Serialize the configuration and compute its SHA1 hash.
-    3. Compare the hash with the previously stored hash.
-    4. If unchanged, skip the update.
-    5. Otherwise build and send a new vCard stanza.
-
-    Notes
-    -----
-    The vCard is sent using the XMPP extension
-    XEP-0054 (vCard-temp). Only fields present in the
-    configuration are written to the stanza.
+    Update the XMPP vCard if plugins/vcard.py XML string has changed.
+    Uses VCARD global from vcard.py (XML, as string).
+    Skips update if hash matches.
     """
-
-    cfg = config.get("vcard")
-
-    if not cfg:
+    plugin_dir = os.path.dirname(os.path.abspath(__file__))
+    vcard_py_path = os.path.join(os.path.dirname(plugin_dir), "vcard.py")
+    if not os.path.exists(vcard_py_path):
+        log.warning("[_REG_PROFILE] vcard.py does not exist. Skipping vCard update.")
         return
-
-    serialized = json.dumps(cfg, sort_keys=True).encode()
-
-    new_hash = sha1(serialized)
-    stored_hash = read_hash(VCARD_HASH_FILE)
-
-    if stored_hash == new_hash:
-        log.info("[_REG_PROFILE] vCard unchanged — skipping update")
-        return
-
-    iq = bot.make_iq_set()
-    iq.enable("vcard_temp")
-
-    card = iq["vcard_temp"]
-
-    build_vcard(card, cfg)
 
     try:
-
-        await iq.send()
-
-        write_hash(VCARD_HASH_FILE, new_hash)
-
-        log.info("[_REG_PROFILE]✅ vCard updated")
-
+        spec = importlib.util.spec_from_file_location("vcard", vcard_py_path)
+        vcardmod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(vcardmod)
+        VCARD = vcardmod.VCARD
+        if not isinstance(VCARD, str):
+            log.error("[_REG_PROFILE] VCARD variable in vcard.py is not a string!")
+            return
     except Exception as e:
-        log.error(f"[_REG_PROFILE]🔴 vCard update failed: {e}")
+        log.error(f"[_REG_PROFILE] Error importing vcard.py: {e}")
+        return
+
+    # For hash comparison
+    serialized = VCARD.encode("utf-8")
+    new_hash = sha1(serialized)
+    stored_hash = read_hash(VCARD_HASH_FILE)
+    if stored_hash == new_hash:
+        log.info("[_REG_PROFILE] vCard (from vcard.py/XML) unchanged — skipping update")
+        return
+
+    try:
+        vcard_elem = ET.fromstring(VCARD)
+        iq = bot.make_iq_set()
+        iq.append(vcard_elem)
+        await iq.send()
+        write_hash(VCARD_HASH_FILE, new_hash)
+        log.info("[_REG_PROFILE]✅ vCard (from vcard.py, XML string) updated")
+    except Exception as e:
+        log.error(f"[_REG_PROFILE]🔴 vCard upload from vcard.py (XML) failed: {e}")
 
 
 # -------------------------------------------------

@@ -54,8 +54,8 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 ### **help**
 > Dynamic help system for plugins and commands, including multi-word commands and per-room in-room help toggling.
 
-### **information**
-> Information lookup plugin with commands for Wikipedia summaries, latest Fediverse posts, and Urban Dictionary searches, with per-room toggling.
+### **info**
+> Information lookup plugin with commands for Wikipedia summaries, latest Fediverse posts, Urban Dictionary searches and the local acronym database, with per-room toggling.
 
 ### **karma**
 > Room-local karma tracking plugin using `nick++` / `nick--`, with leaderboards and per-room enable/disable support.
@@ -132,7 +132,11 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 4. **Configure the bot:**
     - Copy `config_sample.json` to `config.json` and edit with your XMPP credentials and settings.
 
-5. **Run the bot:**
+5. **Configure your vCard for the bot**
+    - Copy `vcard_sample.py` to `vcard.py` and edit with your desired bot profile information, such as name, nickname, birthday, URLs, notes and location. The bot uses the CTRY (country) -> REGION (state) -> LOCALITY (city) for weather information, using the most exact field provided. The complete address is not shown in lookups. You can set all fields a XMPP vCard is allowed to contain. Look at [XEP-0054](https://xmpp.org/extensions/xep-0054.html) for more information on vCard fields.
+    - **NOTE**: Even if you can set your TZ (timezone) in your vcard, the bot doesn't recognize TZ entries in any vCard from anyone. Users have to set their timezone manually with the ",tz set &ltIANA timezone identifier&gt;" command.
+
+6. **Run the bot:**
    ```sh
    python envsbot.py
    ```
