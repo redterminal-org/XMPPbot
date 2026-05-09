@@ -1,3 +1,6 @@
+# Please leave the "<vCard xmlns=\"vcard-temp\">" and "</vCard>" tags
+# in place, otherwise the bot won't recognize the file as a vCard. You
+# can also add more fields, but the bot won't show them.
 VCARD = """<vCard xmlns=\"vcard-temp\">
   <FN>[botname] XMPP Testbot No.1</FN>
   <NICKNAME>[botnickname]</NICKNAME>
