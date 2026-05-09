@@ -557,8 +557,10 @@ if __name__ == "__main__":
             log.info(f"[INIT] ✅ Copied {SOURCE} to {TARGET}")
         except Exception as e:
             log.error(f"[INIT] 🔴 Failed to copy {SOURCE} to {TARGET}: {e}")
-    else:
+    elif not os.path.exists(SOURCE):
         log.warning(f"[INIT] 🔴 Source file {SOURCE} not found. Skipping copy.")
+    else:
+        log.info(f"[INIT] ✅ Target file {TARGET} already exists. Skipping copy.")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
