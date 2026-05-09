@@ -134,7 +134,7 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 
 5. **Configure your vCard for the bot**
     - Copy `vcard_sample.py` to `vcard.py` and edit with your desired bot profile information, such as name, nickname, birthday, URLs, notes and location. The bot uses the CTRY (country) -> REGION (state) -> LOCALITY (city) for weather information, using the most exact field provided. The complete address is not shown in lookups. You can set all fields a XMPP vCard is allowed to contain. Look at [XEP-0054](https://xmpp.org/extensions/xep-0054.html) for more information on vCard fields.
-    - **NOTE**: Even if you can set your TZ (timezone) in your vcard, the bot doesn't recognize TZ entries in any vCard from anyone. Users have to set their timezone manually with the ",tz set &ltIANA timezone identifier&gt;" command.
+    - **NOTE**: Even if you can set your TZ (timezone) in your vcard, the bot doesn't recognize TZ entries in any vCard from anyone. Users have to set their timezone manually with the ",tz set &lt;IANA timezone identifier&gt;" command.
 
 6. **Run the bot:**
    ```sh
