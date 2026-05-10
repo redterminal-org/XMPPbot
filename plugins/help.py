@@ -52,7 +52,7 @@ HELP_KEY = "HELP"
 
 PLUGIN_META = {
     "name": "help",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "Dynamic help for plugins and commands.",
     "category": "core",
     "requires": ["_core"],
@@ -185,13 +185,14 @@ def _format_command(cmd_obj, prefix):
 
 @command("help", aliases=["h"])
 async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
-    """
-    Show help.
+    """EnvsBot Version v0.4.0-BETA - Second BETA
+
+    Show help for plugins and commands
 
     Usage:
-      {prefix}help
-      {prefix}help <plugin>
-      {prefix}help {prefix}<command>
+      {prefix}help - This help page
+      {prefix}help <plugin> - Help for a specific plugin from the list below
+      {prefix}help {prefix}<command> - Help for a specific command of a plugin
     """
 
     prefix = config.get("prefix", ",")
@@ -226,8 +227,10 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
     # --------------------------------------------------
 
     if not query:
+        doc = cmd_help.__doc__.format(prefix=bot.prefix)
 
-        lines = ["📦 Available plugins", ""]
+        lines = [f"{doc}"]
+        lines += ["📦 Available plugins", ""]
 
         for name, module in sorted(pm.plugins.items()):
 
@@ -244,10 +247,6 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
 
             doc = _first_line(module.__doc__) or ""
             lines.append(f"• {name} — {doc}")
-
-        lines.append("")
-        lines.append(f"Use {prefix}help <plugin> for plugin help.")
-        lines.append(f"Use {prefix}help {prefix}<command> for command help.")
 
         bot.reply(msg, lines)
         return
