@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "envsbot"
-version = "0.3.0"
+version = "0.4.0"
 description = "A modular plugin-driven XMPP bot framework"
 readme = "README.md"
 requires-python = ">=3.9"
 
 authors = [
-    { name = "~dan", email = "dan@envs.net" }
+    { name = "~dan", email = "dan@envs.net" },
+    { name = "~creme", email = "creme@envs.net" },
 ]
 
 license = { text = "GPL-3.0-only" }

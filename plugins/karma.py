@@ -21,8 +21,6 @@ import re
 import time
 from functools import partial
 
-from slixmpp import JID
-
 from utils.command import command, Role
 from plugins._core import (
     _is_muc_pm,
@@ -30,6 +28,7 @@ from plugins._core import (
     handle_room_toggle_command,
     _is_enabled_for_room,
     _is_public_muc,
+    get_real_jid,
 )
 from plugins.sed import is_sed_command
 
@@ -90,30 +89,6 @@ async def _set_room_scores(bot, room_jid: str, scores: dict):
 
     data[room_jid] = scores
     await store.set_global(KARMA_SCORES_KEY, data)
-
-
-async def _resolve_real_jid(bot, msg) -> str | None:
-    room = msg["from"].bare
-    nick = msg.get("mucnick") or msg["from"].resource
-
-    muc = bot.plugin.get("xep_0045", None)
-    if muc:
-        try:
-            real_jid = muc.get_jid_property(room, nick, "jid")
-            if real_jid:
-                return str(JID(str(real_jid)).bare)
-        except Exception:
-            pass
-
-    try:
-        cached = JOINED_ROOMS.get(room, {}).get("nicks", {}).get(nick, {})
-        jid = cached.get("jid")
-        if jid:
-            return str(JID(str(jid)).bare)
-    except Exception:
-        pass
-
-    return None
 
 
 def _get_bot_nick(room_jid: str) -> str | None:
@@ -212,7 +187,7 @@ def _extract_karma_events(body: str, room_jid: str) -> list[tuple[str, int]]:
 
 async def _actor_throttle_key(bot, msg) -> str:
     room_jid = msg["from"].bare
-    real_jid = await _resolve_real_jid(bot, msg)
+    real_jid, _, _ = await get_real_jid(bot, msg)
 
     if real_jid:
         return f"{room_jid}:{real_jid.lower()}"

@@ -34,7 +34,6 @@ from collections import defaultdict
 from datetime import date
 from functools import partial
 
-from slixmpp import JID
 
 from utils.command import command, Role
 from utils.config import config
@@ -42,16 +41,16 @@ from plugins._core import (
     _is_muc_pm,
     _is_enabled_for_room,
     handle_room_toggle_command,
-    JOINED_ROOMS,
     _ensure_user_exists,
     _is_public_muc,
-    )
+    get_real_jid,
+)
 
 log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "ducks",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "description": "Duck game for MUCs with room toggles and leaderboards",
     "category": "fun",
     "requires": ["rooms", "_core"],
@@ -200,41 +199,6 @@ async def _increment_daily_duck_count(bot, room_jid: str) -> int:
     return room_data["count"]
 
 
-def _normalize_bare_jid(value) -> str | None:
-    if not value:
-        return None
-    try:
-        return str(JID(str(value)).bare)
-    except Exception:
-        value = str(value)
-        return value.split("/", 1)[0]
-
-
-async def _resolve_real_jid(bot, msg) -> str | None:
-    room = msg["from"].bare
-    nick = msg.get("mucnick") or msg["from"].resource
-
-    muc = bot.plugin.get("xep_0045", None)
-    if muc:
-        try:
-            real_jid = muc.get_jid_property(room, nick, "jid")
-            bare = _normalize_bare_jid(real_jid)
-            if bare:
-                return bare
-        except Exception:
-            pass
-
-    try:
-        cached = JOINED_ROOMS.get(room, {}).get("nicks", {}).get(nick, {})
-        bare = _normalize_bare_jid(cached.get("jid"))
-        if bare:
-            return bare
-    except Exception:
-        pass
-
-    return None
-
-
 async def _get_last_duck_time(bot, room_jid):
     store = await get_ducks_store(bot)
     data = await store.get_global(DUCKS_LAST_KEY, default={})
@@ -302,7 +266,7 @@ async def _get_top(bot, stat_key, limit=10):
     for _, room_data in room_index.items():
         for user_jid, data in room_data.items():
             disp_name = data.get("display_name", user_jid)
-            disp_name = disp_name[:1] + '\uFEFF' + disp_name[1:] if len(disp_name) > 1 else disp_name
+            disp_name = disp_name[:-1] + '\uFEFF' + disp_name[-1] if len(disp_name) > 1 else disp_name
             entry = combined.setdefault(user_jid, {
                 "display_name": data.get("display_name", user_jid),
                 "count": 0,
@@ -483,7 +447,7 @@ async def _handle_duck_action(bot, msg, action):
     room_jid = msg["from"].bare
     display_name = msg.get("mucnick") or msg["from"].resource or "Unknown"
 
-    user_jid = await _resolve_real_jid(bot, msg)
+    user_jid, _, _ = await get_real_jid(bot, msg)
     if not user_jid:
         _duck_reply(bot, msg, "❌ Could not determine your JID in this room.")
         return
@@ -606,7 +570,10 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if sub == "stats":
-        target = " ".join(args[1:]).strip() if len(args) > 1 else await _resolve_real_jid(bot, msg)
+        if len(args) > 1:
+            target = " ".join(args[1:]).strip()
+        else:
+            target, _, _ = await get_real_jid(bot, msg)
         if not target:
             _duck_reply(bot, msg, "❌ Could not determine target user.")
             return
@@ -621,7 +588,7 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
         current_trap = int(room_stats.get("trapped", 0))
         safe_name = stats.get("display_name") or "That user"
 
-        disp_name = safe_name[:1] + '\uFEFF' + safe_name[1:] if len(safe_name) > 1 else safe_name
+        disp_name = safe_name[:-1] + '\uFEFF' + safe_name[-1] if len(safe_name) > 1 else safe_name
 
         message = (
                 f"📊 {disp_name} has befriended "

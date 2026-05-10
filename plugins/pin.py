@@ -42,13 +42,14 @@ from plugins._core import (
     cache_message,
     handle_room_toggle_command,
     paginate_items,
+    _get_enabled_rooms,
 )
 
 log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "pin",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "Pin room messages with paging and non-reply fallback.",
     "category": "utility",
     "requires": ["rooms", "_core"],
@@ -204,14 +205,6 @@ def _room_bucket(state: dict[str, Any], room: str) -> dict[str, Any]:
             PINS_FIELD: [],
         }
     return state[room]
-
-
-async def _enabled_rooms(bot) -> dict[str, bool]:
-    store = await get_pin_store(bot)
-    state = await store.get_global(PIN_ENABLED_KEY, default={})
-    if not isinstance(state, dict):
-        return {}
-    return state
 
 
 async def _sender_can_manage_pins_in_room(bot, msg, room_jid: str) -> bool:

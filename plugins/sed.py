@@ -29,7 +29,6 @@ from functools import partial
 
 from utils.command import command, Role
 from utils.config import config
-from plugins.rooms import JOINED_ROOMS
 from plugins import _core
 
 log = logging.getLogger(__name__)
@@ -362,7 +361,7 @@ async def get_sed_store(bot):
 
 def _is_direct_dm(msg, is_room: bool) -> bool:
     """Return True for normal 1:1 DMs, but not MUC PMs."""
-    return (not is_room) and (msg["from"].bare not in JOINED_ROOMS)
+    return (not is_room) and (msg["from"].bare not in _core.JOINED_ROOMS)
 
 
 def _sed_reply(bot, msg, text: str, is_room: bool):

@@ -14,6 +14,9 @@ import tempfile
 import psutil
 from datetime import datetime
 from utils.command import command, Role
+from plugins._core import (
+        JOINED_ROOMS,
+)
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +25,7 @@ PLUGIN_META = {
     "version": "0.1.2",
     "description": "Bot administration commands",
     "category": "core",
+    "requires": ["_core"],
 }
 
 # Use a temp file to store restart notification data
@@ -266,7 +270,6 @@ async def bot_status(bot, sender, nick, args, msg, is_room):
 
         # Connected rooms (from rooms plugin)
         try:
-            from plugins.rooms import JOINED_ROOMS
             joined_rooms = len(JOINED_ROOMS)
             lines.append(f"Connected Rooms: {joined_rooms}")
             if joined_rooms > 0:
