@@ -150,7 +150,7 @@ def _normalize_lookup(scores: dict, target: str):
 
 
 def _format_entry(idx: int, nick: str, score: int) -> str:
-    used_nick = nick[:1] + "\uFEFF" + nick[1:] if len(nick) > 1 else nick
+    used_nick = nick[:-1] + "\uFEFF" + nick[-1] if len(nick) > 1 else nick
     return f"#{idx} {used_nick} ({score})"
 
 
@@ -315,7 +315,7 @@ async def karma_command(bot, sender_jid, nick, args, msg, is_room):
     scores = await _get_room_scores(bot, room_jid)
     canonical, score = _normalize_lookup(scores, target)
     display = canonical or target
-    display = display[:1] + '\uFEFF' + display[1:] if len(display) > 1 else display
+    display = display[:-1] + '\uFEFF' + display[-1] if len(display) > 1 else display
 
     _karma_reply(bot, msg, f"📊 Karma for {display}: {score}")
 
@@ -383,8 +383,8 @@ async def on_message(bot, msg):
 
             sign = "+1" if delta > 0 else "-1"
             icon = "📈" if delta > 0 else "📉"
-            receiver = key[:1] + '\uFEFF' + key[1:] if len(key) > 1 else key
-            actor = actor_nick[:1] + '\uFEFF' + actor_nick[1:] if len(actor_nick) > 1 else actor_nick
+            receiver = key[:-1] + '\uFEFF' + key[-1] if len(key) > 1 else key
+            actor = actor_nick[:-1] + '\uFEFF' + actor_nick[-1] if len(actor_nick) > 1 else actor_nick
             response_lines.append(
                 f"{icon} {receiver} now has {scores[key]} karma ({sign} from {actor})"
             )
