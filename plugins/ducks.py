@@ -301,12 +301,13 @@ async def _get_top(bot, stat_key, limit=10):
 
     for _, room_data in room_index.items():
         for user_jid, data in room_data.items():
+            disp_name = data.get("display_name", user_jid)
+            disp_name = disp_name[:1] + '\uFEFF' + disp_name[1:] if len(disp_name) > 1 else disp_name
             entry = combined.setdefault(user_jid, {
                 "display_name": data.get("display_name", user_jid),
                 "count": 0,
             })
-            entry["display_name"] = data.get("display_name",
-                                             entry["display_name"])
+            entry["display_name"] = disp_name
             entry["count"] += int(data.get(stat_key, 0))
 
     entries = list(combined.values())
@@ -340,8 +341,7 @@ async def _get_user_stats(bot, target: str):
                 continue
 
             found = True
-            if not totals["display_name"]:
-                totals["display_name"] = display_name
+            totals["display_name"] = display_name
 
             bef = int(data.get("befriended", 0))
             trap = int(data.get("trapped", 0))
@@ -621,15 +621,19 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
         current_trap = int(room_stats.get("trapped", 0))
         safe_name = stats.get("display_name") or "That user"
 
+        disp_name = safe_name[:1] + '\uFEFF' + safe_name[1:] if len(safe_name) > 1 else safe_name
+
+        message = (
+                f"📊 {disp_name} has befriended "
+                f"{int(stats.get('befriended', 0))} "
+                f" and trapped {int(stats.get('trapped', 0))} ducks "
+                f"({current_bef}/{current_trap} in {room_jid})"
+        )
+
         _duck_reply(
             bot,
             msg,
-            (
-                f"📊 {safe_name} has befriended "
-                f"{int(stats.get('befriended', 0))} and trapped "
-                f"{int(stats.get('trapped', 0))} ducks "
-                f"({current_bef}/{current_trap} in {room_jid})"
-            ),
+            f"{message}",
         )
         return
 
