@@ -466,7 +466,7 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
         lines = [
             f"👤 Nickname: {display_nick}",
             f"🕒 Last seen: {last_seen_str}",
-            f"Status: {target_emoji} {target_show} ({target_status})" if present_in_room and target_show != "unknown" else "Status: unknown",
+            f"-  Status: {target_emoji} {target_show} ({target_status})" if present_in_room and target_show != "unknown" else "Status: unknown",
         ]
 
         log.info(f"[SEEN] Lookup for '{display_nick}': seen='{last_seen_str}' status={target_show} jid={target_jid}")
