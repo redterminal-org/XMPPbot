@@ -4,6 +4,7 @@ import inspect
 import logging
 import os
 import shutil
+import subprocess
 
 from slixmpp.xmlstream import ET
 
@@ -39,6 +40,7 @@ class Bot(slixmpp.ClientXMPP):
         self.nick = config.get("nick", "bot")
         self.admins = []
         self.prefix = config.get("prefix", ",")
+        self.version = get_latest_git_tag() or "unknown"
         self.connection_start_time = None
 
         # Rate limiter (in-memory, per process)
@@ -513,6 +515,20 @@ class Bot(slixmpp.ClientXMPP):
                            f"failed due to internal error.")
 
             self.reply(msg, err_msg)
+
+
+# --------------------------------------------------
+# GET LATEST GIT TAG (for version display)
+# --------------------------------------------------
+def get_latest_git_tag():
+    try:
+        tag = subprocess.check_output(
+            ['git', 'describe', '--tags', '--abbrev=0'],
+            stderr=subprocess.STDOUT
+        ).strip().decode('utf-8')
+        return tag
+    except subprocess.CalledProcessError:
+        return None  # No tags found or not a git repo
 
 
 # -------------------------------------------------

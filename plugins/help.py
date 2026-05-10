@@ -185,9 +185,7 @@ def _format_command(cmd_obj, prefix):
 
 @command("help", aliases=["h"])
 async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
-    """EnvsBot Version v0.4.0-BETA - Second BETA
-
-    Show help for plugins and commands
+    """Show help for plugins and commands
 
     Usage:
       {prefix}help - This help page
@@ -229,7 +227,8 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
     if not query:
         doc = cmd_help.__doc__.format(prefix=bot.prefix)
 
-        lines = [f"{doc}"]
+        lines = [f"📚 Envsbot - Version {bot.version or 'unknown'}", ""]
+        lines += [f"{doc}"]
         lines += ["📦 Available plugins", ""]
 
         for name, module in sorted(pm.plugins.items()):
