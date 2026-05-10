@@ -150,7 +150,8 @@ def _normalize_lookup(scores: dict, target: str):
 
 
 def _format_entry(idx: int, nick: str, score: int) -> str:
-    return f"#{idx} {nick} ({score})"
+    used_nick = nick[:1] + "\uFEFF" + nick[1:] if len(nick) > 1 else nick
+    return f"#{idx} {used_nick} ({score})"
 
 
 def _format_ranking(entries: list[tuple[str, int]]) -> str:
@@ -307,12 +308,14 @@ async def karma_command(bot, sender_jid, nick, args, msg, is_room):
     target = _canonical_nick(room_jid, sub)
     known_targets = {n.lower() for n in _known_room_nicks(room_jid)}
     if target.lower() not in known_targets:
-        _karma_reply(bot, msg, f"❌ '{sub}' is not currently in this room.")
+        sub_name = sub[:1] + '\uFEFF' + sub[1:] if len(sub) > 1 else sub
+        _karma_reply(bot, msg, f"❌ '{sub_name}' is not currently in this room.")
         return
 
     scores = await _get_room_scores(bot, room_jid)
     canonical, score = _normalize_lookup(scores, target)
     display = canonical or target
+    display = display[:1] + '\uFEFF' + display[1:] if len(display) > 1 else display
 
     _karma_reply(bot, msg, f"📊 Karma for {display}: {score}")
 
@@ -380,8 +383,10 @@ async def on_message(bot, msg):
 
             sign = "+1" if delta > 0 else "-1"
             icon = "📈" if delta > 0 else "📉"
+            receiver = key[:1] + '\uFEFF' + key[1:] if len(key) > 1 else key
+            actor = actor_nick[:1] + '\uFEFF' + actor_nick[1:] if len(actor_nick) > 1 else actor_nick
             response_lines.append(
-                f"{icon} {key} now has {scores[key]} karma ({sign} from {actor_nick})"
+                f"{icon} {receiver} now has {scores[key]} karma ({sign} from {actor})"
             )
 
             log.info(
