@@ -340,6 +340,9 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
     Show the last seen time and current presence for a given nickname.
     Works in groupchats, groupchat PMs, and DMs.
     Uses the caller's timezone and always displays the provided nickname.
+
+    Usage:
+        {prefix}seen <nick>
     """
     enabled_rooms = await _get_enabled_rooms(bot, TOOLS_KEY, "tools")
     if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
@@ -476,7 +479,7 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
             f"👤 Nickname: {display_nick}",
             f"🕒 Last seen: {last_seen_str}",
             f"-  Status: {target_emoji} {target_show} ({target_status})" if present_in_room and target_show != "unknown" else "-  Status: unknown",
-            f"-  Joined rooms (tracked by bot): {', '.join(rooms_with_nick)}" if rooms_with_nick else "- Currently not in any tracked rooms"
+            f"-  Joined rooms (tracked by bot): {', '.join(rooms_with_nick)}" if rooms_with_nick else "-  Currently not in any tracked rooms"
         ]
 
         log.info(f"[SEEN] Lookup for '{display_nick}': seen='{last_seen_str}' status={target_show} jid={target_jid}")
