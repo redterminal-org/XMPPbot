@@ -12,6 +12,7 @@ user's timezone, as well as convert Unix timestamps.
 Commands:
     {prefix}ping
     {prefix}echo <message>
+    {prefix}seen [nick]
     {prefix}time [nick]
     {prefix}date [nick]
     {prefix}utc
