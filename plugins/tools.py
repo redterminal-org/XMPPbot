@@ -32,6 +32,7 @@ from plugins._core import (
     _get_enabled_rooms,
     _get_user_timezone,
     get_user_tzinfo,
+    get_jids_from_nick_index,
 )
 
 log = logging.getLogger(__name__)
@@ -370,7 +371,7 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
                 present_in_room = True
             else:
                 # 2. Fallback: historical JID from _nick_index
-                candidates = _nick_index.get(display_nick, [])
+                candidates = get_jids_from_nick_index(bot, display_nick)
                 if candidates:
                     target_jid = candidates[0]
                 else:
