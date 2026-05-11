@@ -90,6 +90,13 @@ PLUGIN_STORE_CONFIG = {
 # -------------------------------------------------
 
 # Handlers
+def is_nick_change(pres):
+    # Looks for <status code="303"/> (nick change)
+    for stat in pres.xml.findall('.//{http://jabber.org/protocol/muc#user}status'):
+        if stat.attrib.get("code") == "303":
+            return True
+    return False
+
 async def on_muc_presence(bot, pres):
     try:
         room = pres["from"].bare
@@ -97,57 +104,46 @@ async def on_muc_presence(bot, pres):
         role = pres["muc"].get("role")
         jid = pres["muc"].get("jid")
         affiliation = pres["muc"].get("affiliation")
-
-        if jid is None:
-            jid = pres["from"]
-
         jid_bare = str(jid.bare) if jid else None
 
-        # Defensive: Use .get() instead of direct access
-        room_info = JOINED_ROOMS.get(room)
-        if room_info is None:
-            room_info = {
-                "nick": "unknown",
-                "autojoin": "unknown",
-                "status": None,
-                "affiliation": "unknown",
-                "role": "unknown",
-                "nicks": {}
-            }
+        room_info = JOINED_ROOMS.setdefault(room, {
+            "nick": "unknown", "autojoin": "unknown", "status": None,
+            "affiliation": "unknown", "role": "unknown", "nicks": {}
+        })
 
+        nicks = room_info["nicks"]
+
+        # --- Handle nick changes: remove old, add new ---
+        if is_nick_change(pres) and pres["type"] == "unavailable":
+            old_nick = nick
+            if old_nick in nicks:
+                del nicks[old_nick]
+            log.debug(f"[ROOMS] Removed old nick due to nick change: {old_nick} from {room}")
+            return  # Don't re-add, handled by new presence
+
+        # --- Handle leaves/disconnects/kicks/bans ---
         if pres["type"] == "unavailable":
-            if JOINED_ROOMS.get(room) is None:
-                return
-            if nick == JOINED_ROOMS.get(room, {}).get("nick"):
+            if nick in nicks:
+                del nicks[nick]
+                log.debug(f"[ROOMS] Removed nick {nick} from {room}")
+            # If the bot itself left the room, remove entire entry
+            if nick == room_info.get("nick"):
                 JOINED_ROOMS.pop(room, None)
-            else:
-                try:
-                    nicks = JOINED_ROOMS.get(room, {}).get("nicks", {})
-                    if nick in nicks:
-                        del nicks[nick]
-                except Exception as e:
-                    log.debug(f"[ROOMS] Error removing nick '{nick}' from '{room}': {e}")
+                log.info(f"[ROOMS] Bot left room {room}, cleaned up room state.")
+            return
 
-        new_nick = room_info["nicks"].get(nick)
-        if new_nick is None:
-            new_nick = {
-                "jid": jid_bare if jid is not None else str(pres["from"]),
-                "affiliation":
-                    affiliation if affiliation is not None else "unknown",
-                "role": role if role is not None else "unknown"
-            }
-        if affiliation is not None:
-            new_nick["affiliation"] = affiliation
-        if role is not None:
-            new_nick["role"] = role
+        # --- Else: presence update or join (available) ---
+        nicks[nick] = {
+            "jid": jid_bare if jid is not None else str(pres["from"]),
+            "affiliation": affiliation if affiliation is not None else "unknown",
+            "role": role if role is not None else "unknown"
+        }
 
-        room_info["nicks"][nick] = new_nick
-
+        # Update bot's own state in room_info if relevant
         if jid_bare == bot.boundjid.bare:
             if affiliation is not None:
-                if affiliation != room_info["affiliation"]:
-                    room_info["affiliation"] = affiliation
-            if role != room_info["role"]:
+                room_info["affiliation"] = affiliation
+            if role is not None:
                 room_info["role"] = role
             if nick != room_info["nick"]:
                 room_info["nick"] = nick
@@ -156,7 +152,6 @@ async def on_muc_presence(bot, pres):
 
     except Exception as e:
         log.exception(f"[ROOMS] Error in on_muc_presence: {e}")
-
 
 # -------------------------------------------------
 # ON_LOAD startup function (Module autoloadind)
