@@ -394,6 +394,14 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
                 bot.reply(msg, "🔴 Could not determine your JID in this room.")
                 return
 
+            rooms_with_nick = []
+
+            for muc_jid, room_data in JOINED_ROOMS.items():
+                nicks = room_data.get("nicks", {})
+                occupant_info = nicks.get(display_nick)
+                if occupant_info and occupant_info.get("jid"):
+                    rooms_with_nick.append(muc_jid)
+
             # Presence: only if currently in the room
             target_show = "unknown"
             target_status = ""
@@ -467,7 +475,8 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
         lines = [
             f"👤 Nickname: {display_nick}",
             f"🕒 Last seen: {last_seen_str}",
-            f"-  Status: {target_emoji} {target_show} ({target_status})" if present_in_room and target_show != "unknown" else "Status: unknown",
+            f"-  Status: {target_emoji} {target_show} ({target_status})" if present_in_room and target_show != "unknown" else "-  Status: unknown",
+            f"-  Joined rooms (tracked by bot): {', '.join(rooms_with_nick)}" if rooms_with_nick else "- Currently not in any tracked rooms"
         ]
 
         log.info(f"[SEEN] Lookup for '{display_nick}': seen='{last_seen_str}' status={target_show} jid={target_jid}")
