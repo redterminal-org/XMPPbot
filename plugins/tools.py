@@ -371,7 +371,7 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
                 present_in_room = True
             else:
                 # 2. Fallback: historical JID from _nick_index
-                candidates = get_jids_from_nick_index(bot, display_nick)
+                candidates = await get_jids_from_nick_index(bot, display_nick)
                 if candidates:
                     target_jid = candidates[0]
                 else:
