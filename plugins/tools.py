@@ -25,7 +25,6 @@ from datetime import datetime
 from datetime import timezone as dt_timezone
 from utils.command import command, Role
 from utils.config import config
-from plugins.rooms import JOINED_ROOMS
 from plugins._core import (
     _is_muc_pm,
     handle_room_toggle_command,
@@ -33,6 +32,7 @@ from plugins._core import (
     _get_user_timezone,
     get_user_tzinfo,
     get_jids_from_nick_index,
+    JOINED_ROOMS,
 )
 
 log = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 TOOLS_KEY = "TOOLS"
 PLUGIN_META = {
     "name": "tools",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "description": "Utility commands: ping/pong, message echo, timezone-aware time/date lookups, and Unix timestamp conversion",
     "category": "utility",
     "requires": ["_core", "vcard"],

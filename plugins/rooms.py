@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "rooms",
-    "version": "0.2.5",
+    "version": "0.3.0",
     "description": "Database-backed room management",
     "category": "core",
 }
