@@ -50,7 +50,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "ducks",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "description": "Duck game for MUCs with room toggles and leaderboards",
     "category": "fun",
     "requires": ["rooms", "_core"],
@@ -62,6 +62,7 @@ DUCKS_KEY = "DUCKS"
 DUCKS_INDEX_KEY = "DUCKS_ROOM_INDEX"
 DUCKS_LAST_KEY = "DUCKS_LAST"
 DUCKS_DAILY_KEY = "DUCKS_DAILY"
+DUCKS_STATE_KEY = "DUCKS_STATE"
 
 duck_cfg = config.get("ducks", {})
 DEFAULT_MIN_MESSAGES = duck_cfg.get("min_messages", 150)
@@ -70,6 +71,11 @@ DUCK_SPAWN_CHANCE = duck_cfg.get("spawn_chance", 20)
 MAX_DUCKS_PER_DAY = duck_cfg.get("max_ducks_per_day", 3)
 DUCK_TIMEOUT = duck_cfg.get("timeout", 0)
 COUNT_COMMAND_MESSAGES = duck_cfg.get("count_commands", False)
+
+try:
+    DUCK_STATE_SAVE_EVERY = max(1, int(duck_cfg.get("state_save_every", 1)))
+except (TypeError, ValueError):
+    DUCK_STATE_SAVE_EVERY = 1
 
 ACTIVE_DUCKS = {}              # room_jid -> timestamp
 PENDING_DUCKS = set()          # room_jid waiting for delayed spawn
@@ -165,9 +171,66 @@ def _ensure_threshold(room_jid: str) -> int:
     return threshold
 
 
-def _reset_room_cycle(room_jid: str):
+async def _get_duck_cycle_state(bot) -> dict:
+    store = await get_ducks_store(bot)
+    data = await store.get_global(DUCKS_STATE_KEY, default={})
+    return data if isinstance(data, dict) else {}
+
+
+async def _load_room_cycle(bot, room_jid: str):
+    """Load the per-room duck cycle from persistent storage.
+
+    Only the spawn cycle is persisted. Active/pending ducks are intentionally
+    kept in memory only, because restoring already visible ducks after a bot
+    restart would be surprising and fragile.
+    """
+    data = await _get_duck_cycle_state(bot)
+    room_state = data.get(room_jid, {})
+
+    try:
+        message_count = int(room_state.get("message_count", 0))
+    except (TypeError, ValueError):
+        message_count = 0
+
+    try:
+        next_threshold = int(room_state.get("next_threshold", 0))
+    except (TypeError, ValueError):
+        next_threshold = 0
+
+    # -1 is only an in-memory marker for "duck already scheduled".
+    # After a restart no scheduled task exists anymore, so continue at 0.
+    if message_count < 0:
+        message_count = 0
+
+    if next_threshold <= 0:
+        next_threshold = _get_random_threshold()
+
+    MESSAGE_COUNTS[room_jid] = message_count
+    NEXT_DUCK_THRESHOLDS[room_jid] = next_threshold
+
+
+async def _save_room_cycle(bot, room_jid: str):
+    store = await get_ducks_store(bot)
+    data = await store.get_global(DUCKS_STATE_KEY, default={})
+    if not isinstance(data, dict):
+        data = {}
+
+    message_count = int(MESSAGE_COUNTS.get(room_jid, 0))
+    if message_count < 0:
+        message_count = 0
+
+    data[room_jid] = {
+        "message_count": message_count,
+        "next_threshold": int(_ensure_threshold(room_jid)),
+        "updated_at": time.time(),
+    }
+    await store.set_global(DUCKS_STATE_KEY, data)
+
+
+async def _reset_room_cycle(bot, room_jid: str):
     MESSAGE_COUNTS[room_jid] = 0
     NEXT_DUCK_THRESHOLDS[room_jid] = _get_random_threshold()
+    await _save_room_cycle(bot, room_jid)
 
 
 async def _get_daily_duck_data(bot):
@@ -360,12 +423,12 @@ async def _spawn_duck_after_delay(bot, room_jid, delay):
         daily_count = await _get_daily_duck_count(bot, room_jid)
         if MAX_DUCKS_PER_DAY > 0 and daily_count >= MAX_DUCKS_PER_DAY:
             log.info("[DUCKS] Daily duck limit reached in %s", room_jid)
-            _reset_room_cycle(room_jid)
+            await _reset_room_cycle(bot, room_jid)
             return
 
         PENDING_DUCKS.discard(room_jid)
         ACTIVE_DUCKS[room_jid] = time.time()
-        _reset_room_cycle(room_jid)
+        await _reset_room_cycle(bot, room_jid)
 
         await _increment_daily_duck_count(bot, room_jid)
 
@@ -402,6 +465,9 @@ async def _maybe_schedule_duck(bot, room_jid):
     if room_jid in ACTIVE_DUCKS or room_jid in PENDING_DUCKS:
         return
 
+    if room_jid not in NEXT_DUCK_THRESHOLDS:
+        await _load_room_cycle(bot, room_jid)
+
     daily_count = await _get_daily_duck_count(bot, room_jid)
     if MAX_DUCKS_PER_DAY > 0 and daily_count >= MAX_DUCKS_PER_DAY:
         return
@@ -412,6 +478,12 @@ async def _maybe_schedule_duck(bot, room_jid):
     MESSAGE_COUNTS[room_jid] += 1
 
     threshold = _ensure_threshold(room_jid)
+    if (
+        MESSAGE_COUNTS[room_jid] % DUCK_STATE_SAVE_EVERY == 0
+        or MESSAGE_COUNTS[room_jid] >= threshold
+    ):
+        await _save_room_cycle(bot, room_jid)
+
     if MESSAGE_COUNTS[room_jid] < threshold:
         return
 
@@ -419,6 +491,8 @@ async def _maybe_schedule_duck(bot, room_jid):
         return
 
     MESSAGE_COUNTS[room_jid] = -1
+    await _save_room_cycle(bot, room_jid)
+
     delay = random.randint(5, 20)
     PENDING_DUCKS.add(room_jid)
     SPAWN_TASKS[room_jid] = asyncio.create_task(
@@ -511,7 +585,7 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
         if _is_muc_pm(msg) and args and args[0].lower() == "off":
             ACTIVE_DUCKS.pop(room_jid, None)
             PENDING_DUCKS.discard(room_jid)
-            _reset_room_cycle(room_jid)
+            await _reset_room_cycle(bot, room_jid)
 
             spawn_task = SPAWN_TASKS.pop(room_jid, None)
             if spawn_task:
@@ -679,6 +753,12 @@ async def on_load(bot):
 
 
 async def on_unload(bot):
+    for room_jid in list(NEXT_DUCK_THRESHOLDS):
+        try:
+            await _save_room_cycle(bot, room_jid)
+        except Exception:
+            log.exception("[DUCKS] Failed to save duck cycle for %s during unload", room_jid)
+
     for task in list(SPAWN_TASKS.values()):
         task.cancel()
     for task in list(EXPIRE_TASKS.values()):
