@@ -95,15 +95,9 @@ class CommandRegistry:
             self.by_handler.setdefault(handler, set()).add(tokens)
 
     def remove(self, tokens: Tuple[str, ...]):
-        """
-        Remove a command from the registry by its token tuple.
-        Cleans up all associated indices for the command.
-        """
         cmd = self.index.pop(tokens, None)
-
         if not cmd:
             return
-
         prefix = tokens[0]
 
         if prefix in self.by_prefix:
@@ -112,11 +106,16 @@ class CommandRegistry:
                 del self.by_prefix[prefix]
 
         handler = getattr(cmd, "handler", None)
-
         if handler in self.by_handler:
             self.by_handler[handler].discard(tokens)
             if not self.by_handler[handler]:
                 del self.by_handler[handler]
+
+        # This is the corrected part:
+        for plugin, value_set in list(self.by_plugin.items()):
+            value_set.discard(tokens)
+            if not value_set:
+                del self.by_plugin[plugin]
 
     def remove_by_handler(self, handler):
         """
