@@ -260,6 +260,8 @@ class PluginManager:
         Args:
             hook (callable): Hook function.
         """
+        if hook is None:
+            return
         if inspect.iscoroutinefunction(hook):
             await hook(self.bot)
         else:
