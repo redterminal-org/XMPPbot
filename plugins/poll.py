@@ -30,20 +30,16 @@ Examples:
 
 import asyncio
 import logging
-import re
 import time
 
-from slixmpp import JID
-
 from utils.command import command, Role
-from plugins.rooms import JOINED_ROOMS
 from plugins import _core
 
 log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "poll",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "Room polls with voting, history and auto-close",
     "category": "utility",
     "requires": ["rooms", "_core"],
@@ -58,8 +54,6 @@ MAX_OPTION_LEN = 100
 MAX_HISTORY_PER_ROOM = 50
 
 AUTO_CLOSE_TASKS = {}  # (room_jid, poll_id) -> asyncio.Task
-
-DURATION_PART_RE = re.compile(r"(\d+)([smhd])", re.I)
 
 
 async def get_poll_store(bot):
@@ -86,17 +80,6 @@ def _system_reply(bot, room_jid: str, text: str):
         rate_limit=False,
         ephemeral=False,
     )
-
-
-async def _get_enabled_rooms(bot) -> dict:
-    store = await get_poll_store(bot)
-    data = await store.get_global(POLL_ENABLED_KEY, default={})
-    return data if isinstance(data, dict) else {}
-
-
-async def _is_enabled_for_room(bot, room_jid: str) -> bool:
-    enabled = await _get_enabled_rooms(bot)
-    return bool(enabled.get(room_jid))
 
 
 async def _get_data(bot) -> dict:
@@ -154,53 +137,6 @@ def _format_remaining(ends_at: int | None) -> str:
     return " ".join(parts)
 
 
-def _parse_duration(value: str) -> int | None:
-    """
-    Parse durations like:
-      30s
-      10m
-      2h
-      1d
-      1h30m
-      2d4h15m
-    Returns total seconds or None if invalid.
-    """
-    value = str(value).strip().lower()
-    if not value:
-        return None
-
-    pos = 0
-    total = 0
-
-    for match in DURATION_PART_RE.finditer(value):
-        if match.start() != pos:
-            return None
-
-        amount = int(match.group(1))
-        unit = match.group(2).lower()
-
-        if amount <= 0:
-            return None
-
-        if unit == "s":
-            total += amount
-        elif unit == "m":
-            total += amount * 60
-        elif unit == "h":
-            total += amount * 3600
-        elif unit == "d":
-            total += amount * 86400
-        else:
-            return None
-
-        pos = match.end()
-
-    if pos != len(value):
-        return None
-
-    return total if total > 0 else None
-
-
 def _parse_create_args(raw: str) -> tuple[int | None, str | None, list[str] | None, str | None]:
     """
     Parse:
@@ -217,7 +153,7 @@ def _parse_create_args(raw: str) -> tuple[int | None, str | None, list[str] | No
     if len(parts) < 3:
         return None, None, None, "Usage: poll create [duration] | question | option1 | option2 [| option3 ...]"
 
-    duration = _parse_duration(parts[0])
+    duration = _core.parse_duration(parts[0])
     if duration is not None:
         if len(parts) < 4:
             return None, None, None, "A timed poll needs a question and at least two options."
@@ -341,45 +277,18 @@ def _trim_history(room_bucket: dict):
         polls.pop(pid, None)
 
 
-async def _resolve_real_jid(bot, msg) -> str | None:
-    room = msg["from"].bare
-    nick = msg.get("mucnick") or msg["from"].resource
 
-    muc = bot.plugin.get("xep_0045", None)
-    if muc:
-        try:
-            real_jid = muc.get_jid_property(room, nick, "jid")
-            if real_jid:
-                return str(JID(str(real_jid)).bare)
-        except Exception:
-            pass
+async def _can_manage_poll(bot, msg, is_room: bool, poll: dict) -> bool:
+    sender_jid, _, _ = await _core.get_real_jid(bot, msg)
+    if sender_jid and sender_jid == poll.get("created_by"):
+        return True
 
-    try:
-        cached = JOINED_ROOMS.get(room, {}).get("nicks", {}).get(nick, {})
-        jid = cached.get("jid")
-        if jid:
-            return str(JID(str(jid)).bare)
-    except Exception:
-        pass
-
-    return None
-
-
-async def _is_room_moderator_or_admin(bot, msg, is_room: bool) -> bool:
-    if not is_room or msg.get("type") != "groupchat":
+    if not _core._is_public_muc(msg, is_room):
         return False
 
     room_jid = msg["from"].bare
     nick = msg.get("mucnick") or msg["from"].resource or ""
     return await _core.is_room_moderator_or_admin(bot, room_jid, str(nick))
-
-
-async def _can_manage_poll(bot, msg, is_room: bool, poll: dict) -> bool:
-    sender_jid = await _resolve_real_jid(bot, msg)
-    if sender_jid and sender_jid == poll.get("created_by"):
-        return True
-
-    return await _is_room_moderator_or_admin(bot, msg, is_room)
 
 
 async def _close_poll(bot, room_jid: str, poll_id: str | int, *,
@@ -546,13 +455,13 @@ async def poll_command(bot, sender_jid, nick, args, msg, is_room):
 
     sub = args[0].lower()
     is_muc_pm = _core._is_muc_pm(msg)
-    is_public_room = is_room and msg.get("type") == "groupchat"
+    is_public_room = _core._is_public_muc(msg, is_room)
 
     # Public room commands
     if is_public_room:
         room_jid = msg["from"].bare
 
-        if not await _is_enabled_for_room(bot, room_jid):
+        if not await _core._is_enabled_for_room(bot, POLL_ENABLED_KEY, "poll", room_jid):
             return
 
         data = await _get_data(bot)
@@ -587,7 +496,8 @@ async def poll_command(bot, sender_jid, nick, args, msg, is_room):
             poll_id = room["next_id"]
             room["next_id"] += 1
 
-            creator_jid = await _resolve_real_jid(bot, msg) or str(sender_jid)
+            creator_jid, _, _ = await _core.get_real_jid(bot, msg)
+            creator_jid = creator_jid or str(sender_jid)
             creator_nick = msg.get("mucnick") or msg["from"].resource or nick or str(sender_jid)
 
             poll = {
@@ -715,7 +625,7 @@ async def poll_command(bot, sender_jid, nick, args, msg, is_room):
                 _poll_reply(bot, msg, f"❌ Option must be between 1 and {len(poll['options'])}.")
                 return
 
-            voter_jid = await _resolve_real_jid(bot, msg)
+            voter_jid, _, _ = await _core.get_real_jid(bot, msg)
             if not voter_jid:
                 _poll_reply(bot, msg, "❌ Could not determine your real JID in this room.")
                 return
