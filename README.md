@@ -1,4 +1,4 @@
-# envsbot
+# envsbot [![Build Status](https://drone.envs.net/api/badges/dan/envsbot/status.svg)](https://drone.envs.net/dan/envsbot)
 
 ---
 
