@@ -1,0 +1,16 @@
+---
+kind: pipeline
+type: kubernetes
+name: python3.9
+
+steps:
+- name: pytest
+  image: python:3.9
+  commands:
+  - pip install -r requirements.txt
+  - pip install -r requirements-dev.txt
+  - pytest
+
+  when:
+    event:
+      - tag
