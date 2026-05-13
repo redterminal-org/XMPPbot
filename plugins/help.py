@@ -245,7 +245,7 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
                 continue
 
             doc = _first_line(module.__doc__) or ""
-            lines.append(f"• {name} — {doc}")
+            lines.append(f"•  {name} — {doc}")
 
         bot.reply(msg, lines)
         return
