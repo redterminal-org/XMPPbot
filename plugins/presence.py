@@ -189,4 +189,4 @@ async def presence_set(bot, sender_jid, nick, args, msg, is_room):
 
 
 async def get_presence_store(bot):
-    return bot.db.users.plugin("presence")
+    return await bot.db.users.plugin("presence")
