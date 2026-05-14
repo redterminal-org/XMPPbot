@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "envsbot"
-version = "0.4.0"
+version = "0.4.5"
 description = "A modular plugin-driven XMPP bot framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -53,7 +53,7 @@ packages = ["plugins", "database", "utils"]
 "" = "."
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
+# asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = [ "-v", "--cov=.", "--cov-report=term" ]

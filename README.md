@@ -2,7 +2,8 @@
 
 ---
 
-A modular XMPP bot built with Python 3 and slixmpp.
+A modular XMPP bot built with Python 3 and slixmpp. The minimum version of
+Python required is &gt;=3.12
 
 ---
 
@@ -111,6 +112,7 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 ---
 
 ## Installation
+Remember that the minimum version of Python is `Python3.12`.
 
 1. **Clone the repository:**
    ```sh
@@ -145,13 +147,13 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 
 ## TODO
 
-- [X] Plugin Management Plugin [core]
-- [X] User Management Plugin [core]
-- [X] Room Management Plugin [core]
-- [ ] Add more plugins
+- [X] Plugin Management Plugin \[core\]
+- [X] User Management Plugin \[core\]
+- [X] Room Management Plugin \[core\]
+- [ ] Create Test Suite
+- [X] Add more plugins
 - [ ] Improve documentation and usage examples
-- [ ] Enhance error handling and logging
-- [ ] Choosable Plugins on startup in configuration file
+- [X] Choosable Plugins per room
 - [X] Improve documentation for configuration file
 
 ---
