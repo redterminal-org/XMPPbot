@@ -73,13 +73,19 @@ def test_parse_absolute_datetime():
     dt, count = reminder.parse_absolute_datetime(["bad"], MY_TZ)
     assert dt is None
 
+import pytz
+
 @pytest.mark.asyncio
 async def test_parse_reminder_when_duration_and_datetime():
     # Duration, with message
     sec, msg, when = reminder.parse_reminder_when(["1h", "test"], MY_TZ)
     assert sec is not None and msg == "test" and when.startswith("in ")
     # Absolute datetime, in future
-    future = (datetime.datetime.now() + datetime.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")
+    utcnow = datetime.datetime.now(pytz.UTC)
+    # Convert to your test's timezone
+    local_now = utcnow.astimezone(MY_TZ)
+    local_dt = local_now + datetime.timedelta(hours=1)
+    future = local_dt.strftime("%Y-%m-%d %H:%M")
     args = future.split() + ["something"]
     sec, msg, when = reminder.parse_reminder_when(args, MY_TZ)
     assert sec is not None and msg == "something"
