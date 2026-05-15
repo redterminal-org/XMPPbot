@@ -117,6 +117,8 @@ def normalize_image_url(url: str | None) -> str | None:
         return url
     if url.startswith("//"):
         return "https:" + url
+    if url.startswith("/"):
+        return "https://imgs.xkcd.com" + url
     return url
 
 

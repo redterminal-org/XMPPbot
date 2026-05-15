@@ -345,6 +345,9 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
     Usage:
         {prefix}seen <nick>
     """
+    present_in_room = False
+    rooms_with_nick = []
+
     enabled_rooms = await _get_enabled_rooms(bot, TOOLS_KEY, "tools")
     if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
         bot.reply(msg, "ℹ️ seen is disabled in this room.")
@@ -387,8 +390,8 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
             if caller_info and "jid" in caller_info:
                 caller_jid = caller_info["jid"]
             else:
-                caller_jid = _nick_index.get(caller_nick, [None])[0]
-
+                caller_jids = await get_jids_from_nick_index(bot, caller_nick)
+                caller_jid = caller_jids[0] if caller_jids else None
             if not target_jid:
                 log.info(f"[SEEN] Nick not found in MUC or index: '{display_nick}' (room={room_jid}) requested by '{caller_nick}'")
                 bot.reply(msg, f"🔴 Nick '{display_nick}' not found in this room or index.")
@@ -435,13 +438,12 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
                 bot.reply(msg, "🔴 Can only look up yourself in private chats.")
                 return
             display_nick = nick
-            candidates = _nick_index.get(display_nick, [])
+            candidates = await get_jids_from_nick_index(bot, display_nick)
             target_jid = candidates[0] if candidates else slixmpp.JID(sender_jid).bare
             caller_jid = target_jid
             target_show = "online"
             target_status = ""
             target_emoji = bot.presence.emoji(target_show)
-
         # Get the user's timezone using their real JID
         try:
             timezone = await get_user_tzinfo(bot, caller_jid)

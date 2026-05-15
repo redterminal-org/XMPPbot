@@ -18,6 +18,7 @@ import urllib
 from plugins import _core
 from plugins import vcard
 from utils.command import command, Role
+from utils.config import config     # !!! DO NOT REMOVE! NEEDED FOR TESTS !!!
 from plugins.rooms import JOINED_ROOMS
 
 log = logging.getLogger(__name__)
@@ -127,7 +128,11 @@ async def weather_command(bot, sender_jid, nick, args, msg, is_room):
                 bot.reply(msg, f"🔴  Failed to retrieve vCard information for '{target_nick}'.")
                 return
         else:
-            target_nick = msg["mucnick"]
+            target_nick = msg.get("mucnick") or getattr(msg["from"], "resource",
+                                                        None)
+            if not target_nick:
+                bot.reply(msg, "🔴  Couldn't determine your nickname.")
+                return
             if target_nick not in nicks:
                 log.info((f"[WEATHER] Lookup failed: Nick '{target_nick}'"
                          f"not found in room {muc_jid}"))
@@ -174,7 +179,10 @@ async def weather_command(bot, sender_jid, nick, args, msg, is_room):
                 bot.reply(msg, f"🔴  Failed to retrieve vCard information for '{target_nick}'.")
                 return
         else:
-            target_nick = msg["from"].resource
+            target_nick = getattr(msg["from"], "resource", None)
+            if not target_nick:
+                bot.reply("🔴 Couldn't determine your nickname.")
+                return
             if target_nick not in nicks:
                 log.info((f"[WEATHER] Lookup failed: Nick '{target_nick}'"
                          f"not found in room {muc_jid}"))

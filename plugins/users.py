@@ -26,6 +26,8 @@ from utils.command import command, Role, role_from_int
 
 log = logging.getLogger(__name__)
 
+prefix = getattr(config, "prefix", ",")
+
 MAX_ROOM_NICKS = config.get("users", {}).get("max_room_nicks", 5)
 
 PLUGIN_META = {
@@ -295,7 +297,7 @@ async def users_info(bot, sender, nick, args, msg, is_room):
     try:
         if not args:
             log.warning("[USERS] 🟡️ users info without args")
-            bot.reply(msg, f"🟡️ Usage: {config.prefix}users info <jid|nick>")
+            bot.reply(msg, f"🟡️ Usage: {prefix}users info <jid|nick>")
             return
 
         query = args[0]
@@ -458,7 +460,7 @@ async def users_update(bot, sender, nick, args, msg, is_room):
         # --- Check argument list ---
         if len(args) != 2:
             log.warning("[USERS] 🟡️ users update wrong number of args")
-            bot.reply(msg, (f"🟡️ Usage: {config.prefix}users update"
+            bot.reply(msg, (f"🟡️ Usage: {prefix}users update"
                             " <jid> <role>"))
             return
 
@@ -552,7 +554,7 @@ async def users_delete(bot, sender, nick, args, msg, is_room):
     """
     try:
         if not args:
-            bot.reply(msg, f"🟡️ Usage: {config.prefix}users delete <jid>")
+            bot.reply(msg, f"🟡️ Usage: {prefix}users delete <jid>")
             return
 
         try:
