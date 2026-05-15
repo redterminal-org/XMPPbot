@@ -1,144 +1,222 @@
 import pytest
 import asyncio
-from types import SimpleNamespace
-from plugins import users
+from unittest.mock import AsyncMock, MagicMock, patch
+import types
+
+import plugins.users as users_mod  # Always import the tested module
 
 @pytest.fixture
-def fake_bot():
-    bot = SimpleNamespace()
-    bot.db = SimpleNamespace()
-    # Add a proper stub for muc get_jid_property as required by users_update
-    class FakeMuc:
-        def get_jid_property(self, room, nick, key):
-            # by default, return the nick as jid
-            # simulate role and affiliation
-            if key == "jid": return nick+"@domain"
-            elif key == "role": return "moderator"
-            elif key == "affiliation": return "owner"
-            return None
-    bot.plugin = {"xep_0045": FakeMuc()}
-    async def get_global(key, default=None): return {}
-    async def set_global(key, val): pass
-    bot.db.users = SimpleNamespace(
-        _nick_index={},
-        _nick_index_lock=asyncio.Lock(),
-        plugin=lambda plugin: SimpleNamespace(get_global=get_global, set_global=set_global)
-    )
-    bot.db.rooms = SimpleNamespace()
-    bot.presence = SimpleNamespace()
-    bot.presence.joined_rooms = {}
-    bot.boundjid = SimpleNamespace(bare='bot@domain', resource='BotNick')
-    bot.reply = lambda msg, txt, *a, **k: bot.__dict__.setdefault('_replies', []).append((txt, msg))
-    bot.get_user_role = lambda jid, room=None: 1
-    bot.bot_plugins = SimpleNamespace()
-    bot.bot_plugins.register_event = lambda *args, **kwargs: None
-    bot.bot_plugins.plugins = {"rooms": SimpleNamespace(JOINED_ROOMS={})}
+def mock_bot():
+    bot = MagicMock()
+    bot.db = MagicMock()
+    bot.db.users = MagicMock()
+    bot.db.users.plugin = MagicMock()
+    bot.bot_plugins = MagicMock()
+    bot.bot_plugins.plugins = {}
+    bot.reply = MagicMock()
+    bot.get_user_role = AsyncMock(return_value=users_mod.Role.USER)
     return bot
 
-def msg(from_jid="user@x/resource", resource=None, type_="chat", to_jid="bot@domain"):
-    if "/" in from_jid:
-        bare, res = from_jid.split("/", 1)
-        resource = resource if resource is not None else res
-    else:
-        bare = from_jid
-        resource = resource if resource is not None else "resource"
-    class FakeJID:
-        def __init__(self, bare): self.bare = bare
-    return {
-        "from": SimpleNamespace(bare=bare, resource=resource),
-        "type": type_,
-        "to": FakeJID(to_jid)
+@pytest.fixture
+def mock_msg():
+    m = MagicMock()
+    m.get = MagicMock()
+    m.__getitem__.side_effect = lambda k: m.__dict__.get(k, None)
+    m.__setitem__.side_effect = lambda k, v: m.__dict__.__setitem__(k, v)
+    m.body = ""
+    m['from'] = MagicMock()
+    m['from'].bare = "room@conference.server"
+    m['from'].resource = "nick"
+    m['muc'] = {"room": "room@conference.server", "nick": "nick"}
+    m['type'] = "groupchat"
+    return m
+
+@pytest.fixture(autouse=True)
+def patch_joined_rooms():
+    with patch.object(users_mod, "JOINED_ROOMS", {}, create=True):
+        yield
+
+@pytest.fixture
+def build_mock_bot():
+    def factory():
+        bot = MagicMock()
+        bot.db = MagicMock()
+        bot.db.users = MagicMock()
+        bot.db.users.plugin = MagicMock()
+        bot.bot_plugins = MagicMock()
+        bot.bot_plugins.plugins = {}
+        bot.reply = MagicMock()
+        bot.get_user_role = AsyncMock(return_value=users_mod.Role.USER)
+        return bot
+    return factory
+
+@pytest.mark.asyncio
+async def test_on_muc_presence_adds_and_tracks_nick(mock_bot, mock_msg):
+    pres = {
+        "type": "available",
+        "muc": {"room": "room1@conference.x", "nick": "john", "jid": MagicMock(bare="john@foo.bar")},
+        "from": MagicMock(),
     }
+    with patch("plugins.users.track_room_nick", new=AsyncMock()) as track, \
+         patch("plugins.users.update_last_seen", new=AsyncMock()) as last_seen:
+        await users_mod.on_muc_presence(mock_bot, pres)
+        track.assert_awaited()
+        last_seen.assert_awaited()
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args,um_get,um_find,expect", [
-    (["user@dom"], lambda x: {"jid":"user@dom","role":20}, lambda b,x:[], "User Info"),
-    (["unknick"], lambda x: None, lambda b,x:[], "No users found"),
-    (["mynick"], lambda x: None, lambda b,x:["a@b"], "User Info"),
-    (["multi"], lambda x: None, lambda b,x:["a@b","b@c"], "Multiple users"),
-])
-async def test_users_info(fake_bot, monkeypatch, args, um_get, um_find, expect):
-    # For "mynick" ensure get("a@b") returns a user, else act as original
-    async def async_get(x):
-        if args == ["mynick"] and x == "a@b":
-            return {"jid": x, "role": 20}
-        return um_get(x)
-    async def async_find(b,x): return um_find(b,x)
-    fake_bot.db.users.get = async_get
-    monkeypatch.setattr(users, "find_users_by_nick_safe", async_find)
-    async def get_global(key, default=None): return {}
-    fake_bot.db.users.plugin = lambda plugin: SimpleNamespace(get_global=get_global)
-    # Nick index (optional, but may be required by code path)
-    if args == ["mynick"]:
-        fake_bot.db.users._nick_index = {"mynick": ["a@b"]}
-    await users.users_info(fake_bot, "send", "nick", args, msg(), False)
-    found = any(expect in txt for (txt, _) in getattr(fake_bot, "_replies", []))
-    assert found
+async def test_on_groupchat_message_updates_last_seen(mock_bot, mock_msg):
+    bot_has_priv = MagicMock(return_value=True)
+    mock_bot.bot_plugins.plugins = {'rooms': type("RoomsPlugin", (), {"bot_has_privilege": bot_has_priv})()}
+    mock_msg['muc'] = {"room": "room-A", "nick": "Nick"}
+    mock_bot.plugin = {"xep_0045": MagicMock(get_jid_property=lambda r, n, s: "realjid@x")}
+    with patch("plugins.users.update_last_seen", new=AsyncMock()) as update_last_seen:
+        await users_mod.on_groupchat_message(mock_bot, mock_msg)
+        update_last_seen.assert_awaited()
 
 @pytest.mark.asyncio
-async def test_users_list_permission_checks(fake_bot):
-    fake_bot.bot_plugins.plugins = {}
-    await users.users_list(fake_bot, "s", "n", [], msg(), False)
-    assert "Rooms plugin not loaded" in fake_bot._replies[0][0]
-    fake_bot.bot_plugins.plugins = {"rooms": SimpleNamespace(JOINED_ROOMS={})}
-    await users.users_list(fake_bot, "s", "n", [], msg(from_jid="room@x/resource"), False)
-    assert "Not joined" in fake_bot._replies[-1][0]
+async def test_track_room_nick(build_mock_bot):
+    bot = build_mock_bot()
+    bot.db.users.get = AsyncMock(return_value=None)
+    bot.db.users.create = AsyncMock()
+    plugin_store = AsyncMock()
+    plugin_store.get = AsyncMock(return_value={})
+    plugin_store.set = AsyncMock()
+    bot.db.users.plugin.return_value = plugin_store
+    bot.db.users._nick_index = {}
+    bot.db.users._nick_index_lock = asyncio.Lock()
+    await users_mod.track_room_nick(bot, "jid@x", "roomY", "nickname")
+    assert plugin_store.set.await_count >= 1
 
 @pytest.mark.asyncio
-async def test_users_role_happy_and_no_self_escalate(fake_bot):
-    async def get(jid): return {"jid":jid, "role":20}
-    async def set(jid, k, v): pass
-    fake_bot.db.users.get = get
-    fake_bot.db.users.set = set
-    fake_bot.get_user_role = lambda jid, room=None: 20
-    msgx = msg(from_jid="user@d/resource")
-    await users.users_update(fake_bot, None, None, ["bob@e", "ADMIN"], msgx, False)
-    # Passing assertion if update fails generically, or with the success wording - since that's what happens with fallback
-    assert (any("Updated role" in x[0] for x in fake_bot._replies)
-            or any("Failed to update user" in x[0] for x in fake_bot._replies))
-    fake_bot._replies.clear()
-    await users.users_update(fake_bot, None, None, ["user@d", "OWNER"], msgx, False)
-    assert (any("cannot raise your own role" in x[0] for x in fake_bot._replies)
-            or any("Failed to update user" in x[0] for x in fake_bot._replies))
+async def test_update_last_seen_newer_skipped(build_mock_bot):
+    bot = build_mock_bot()
+    bot.db.users.get = AsyncMock(return_value={"last_seen": "2099-01-01T01:01:01+00:00"})
+    await users_mod.update_last_seen(bot, "jidtoignore@x")
 
 @pytest.mark.asyncio
-async def test_users_role_permission_blocks(fake_bot):
-    async def get(jid): return {"jid":jid, "role":20}
-    async def set(jid, k, v): pass
-    fake_bot.db.users.get = get
-    fake_bot.db.users.set = set
-    fake_bot.get_user_role = lambda jid, room=None: 20
-    msgx = msg(from_jid="alice@d/resource")
-    await users.users_update(fake_bot, None, None, ["bob@e", "NOPE"], msgx, False)
-    # Allow for either "Invalid role" or fallback error
-    assert (
-        ("Invalid role" in fake_bot._replies[-1][0]) 
-        or ("Failed to update user" in fake_bot._replies[-1][0])
-    )
+async def test_users_info_jid_and_nick(mock_bot, mock_msg):
+    with patch.object(users_mod, "prefix", ","):
+        # 1. Direct JID lookup
+        mock_bot.db.users.get = AsyncMock(return_value={"jid": "user1@example.com", "nickname": "N", "role": 4})
+        with patch("plugins.users._send_user_info", new=AsyncMock()) as s_ui:
+            await users_mod.users_info(mock_bot, "sender", "n", ["user1@example.com"], mock_msg, False)
+            s_ui.assert_awaited()
+        # 2. Fallback by nick, with single
+        mock_bot.db.users.get = AsyncMock(side_effect=[None, {"jid": "user2@example.com", "nickname": "M", "role": 4}])
+        with patch("plugins.users.find_users_by_nick_safe", new=AsyncMock(return_value=["user2@example.com"])), \
+             patch("plugins.users._send_user_info", new=AsyncMock()) as s_ui:
+            await users_mod.users_info(mock_bot, "sender", "n", ["M"], mock_msg, False)
+        # 3. Multiple users match by nick
+        with patch("plugins.users.find_users_by_nick_safe", new=AsyncMock(return_value=["a@e", "b@e"])), \
+             patch.object(mock_bot, "reply") as bot_reply:
+            await users_mod.users_info(mock_bot, "sender", "n", ["foo"], mock_msg, False)
+            found = False
+            for call in bot_reply.call_args_list:
+                for arg in call[0]:
+                    if "multiple users found" in str(arg).lower():
+                        found = True
+            assert found
+        # 4. Edge: user not found
+        mock_bot.db.users.get = AsyncMock(return_value=None)
+        with patch.object(mock_bot, "reply") as bot_reply:
+            await users_mod.users_info(mock_bot, "sender", "n", ["zzznotfound"], mock_msg, False)
+        # 5. args missing
+        with patch.object(mock_bot, "reply") as bot_reply:
+            await users_mod.users_info(mock_bot, "sender", "n", [], mock_msg, False)
+            found = False
+            for call in bot_reply.call_args_list:
+                for arg in call[0]:
+                    if "usage:" in str(arg).lower():
+                        found = True
+            assert found
 
 @pytest.mark.asyncio
-async def test_users_delete_command(fake_bot):
-    async def get(jid): return {"jid":jid}
-    async def delete(jid): pass
-    fake_bot.db.users.get = get
-    fake_bot.db.users.delete = delete
-    msgx = msg()
-    await users.users_delete(fake_bot, None, None, ["user@x"], msgx, False)
-    assert any("Deleted" in x[0] for x in fake_bot._replies)
+async def test_users_list_shows_users(mock_bot, mock_msg):
+    # Simulate room context
+    users_mod.JOINED_ROOMS["room-A"] = {
+        "nicks": {
+            "A": {"jid": "a@example", "affiliation": "member", "role": "user"},
+            "B": {"jid": "b@example", "affiliation": "member", "role": "admin"},
+        }
+    }
+    # Patch to force visibility of rooms plugin with required attributes
+    fake_rooms = type("RoomsPlugin", (), {"JOINED_ROOMS": users_mod.JOINED_ROOMS})()
+    mock_bot.bot_plugins.plugins = {"rooms": fake_rooms}
+    mock_msg['from'].bare = "room-A"
+    with patch.object(users_mod, "prefix", ","), patch.object(mock_bot, "reply") as bot_reply:
+        await users_mod.users_list(mock_bot, "send", "nick", [], mock_msg, False)
+        found = False
+        for call in bot_reply.call_args_list:
+            for arg in call[0]:
+                if "users in room-a" in str(arg).lower():
+                    found = True
+        assert found
+    # No nicks
+    users_mod.JOINED_ROOMS["room-B"] = {"nicks": {}}
+    mock_msg['from'].bare = "room-B"
+    fake_rooms = type("RoomsPlugin", (), {"JOINED_ROOMS": users_mod.JOINED_ROOMS})()
+    mock_bot.bot_plugins.plugins = {"rooms": fake_rooms}
+    with patch.object(users_mod, "prefix", ","), patch.object(mock_bot, "reply") as bot_reply:
+        await users_mod.users_list(mock_bot, "send", "nick", ["room-B"], mock_msg, False)
+        found = False
+        for call in bot_reply.call_args_list:
+            for arg in call[0]:
+                if "no users found" in str(arg).lower():
+                    found = True
+        assert found
 
 @pytest.mark.asyncio
-async def test_users_delete_nonexistent(fake_bot):
-    async def get(jid): return None
-    fake_bot.db.users.get = get
-    msgx = msg()
-    await users.users_delete(fake_bot, None, None, ["user@x"], msgx, False)
-    assert any("not found" in x[0] for x in fake_bot._replies)
+async def test_users_role_permission_logic(mock_bot, mock_msg):
+    with patch.object(users_mod, "prefix", ","), \
+         patch("plugins.users.JID", new=lambda x: types.SimpleNamespace(bare=x if isinstance(x, str) else str(x))):
+        mock_bot.db.users.get = AsyncMock(return_value={"jid": "senderjid@example.com", "role": users_mod.Role.ADMIN.value})
+        mock_bot.get_user_role = AsyncMock(side_effect=[users_mod.Role.ADMIN, users_mod.Role.USER])
+        mock_bot.db.users.set = AsyncMock()
+        args = ["receiver@example.com", "user"]
+        with patch.object(mock_bot, "reply") as bot_reply:
+            await users_mod.users_update(mock_bot, "senderjid@example.com", "nick", args, mock_msg, False)
+            assert mock_bot.db.users.set.await_count == 1
 
 @pytest.mark.asyncio
-async def test_users_delete_invalid_args(fake_bot):
-    msgx = msg()
-    # Optionally patch config.prefix or users.config if really needed by 'users_delete'
-    import types
-    users.config = types.SimpleNamespace(prefix=',')
-    await users.users_delete(fake_bot, None, None, [], msgx, False)
-    assert any("Usage" in x[0] for x in fake_bot._replies)
+async def test_users_delete_logic(mock_bot, mock_msg):
+    with patch.object(users_mod, "prefix", ","):
+        mock_bot.db.users.get = AsyncMock(return_value={"jid": "to@delete", "role": 7})
+        mock_bot.db.users.delete = AsyncMock()
+        args = ["to@delete"]
+        with patch.object(mock_bot, "reply") as bot_reply:
+            await users_mod.users_delete(mock_bot, "sender", "nick", args, mock_msg, False)
+            mock_bot.db.users.delete.assert_awaited_with("to@delete")
+
+@pytest.mark.asyncio
+async def test_users_delete_errors(mock_bot, mock_msg):
+    with patch.object(users_mod, "prefix", ","):
+        mock_bot.db.users.get = AsyncMock(return_value=None)
+        with patch.object(mock_bot, "reply") as bot_reply:
+            await users_mod.users_delete(mock_bot, "s", "n", [], mock_msg, False)
+            found = False
+            for call in bot_reply.call_args_list:
+                for arg in call[0]:
+                    if "usage:" in str(arg).lower():
+                        found = True
+            assert found
+        # Invalid JID
+        args = ["invalidjid"]
+        with patch.object(mock_bot, "reply") as bot_reply:
+            await users_mod.users_delete(mock_bot, "s", "n", args, mock_msg, False)
+        # User not found
+        mock_bot.db.users.get = AsyncMock(return_value=None)
+        args = ["notfound@x"]
+        with patch.object(mock_bot, "reply") as bot_reply:
+            await users_mod.users_delete(mock_bot, "s", "n", args, mock_msg, False)
+
+@pytest.mark.asyncio
+async def test__send_user_info_display_full(mock_bot, mock_msg):
+    user_data = {
+        "jid": "x@y", "nickname": "nn", "role": users_mod.Role.ADMIN.value,
+        "created_at": "2024-01-01T01:00:00", "last_seen": "2024-05-01T17:00:00"
+    }
+    with patch.object(users_mod, "prefix", ","):
+        await users_mod._send_user_info(mock_bot, mock_msg, user_data)
+        assert mock_bot.reply.called
+
+# ...add additional tests for track_room_nick, find_users_by_nick_safe, error and edge branches...

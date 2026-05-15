@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 
 import plugins._admin as _admin
 
+import pytest_asyncio  # <-- Add this
+
 class Sender:
     def __str__(self): return "jid/sender"
     @property
@@ -37,7 +39,7 @@ class DummyMsg:
             return self.type
         raise AttributeError(key)
 
-@pytest.fixture
+@pytest_asyncio.fixture   # <-- Use this for async fixtures
 async def fake_bot(monkeypatch):
     """Creates a fake bot object with all needed attributes for _admin commands."""
     class FakeDB:
@@ -62,7 +64,7 @@ async def fake_bot(monkeypatch):
     bot.reply = lambda msg, text, *a, **k: bot._replies.append((text, msg))
     bot._replies = []
     bot.disconnect = lambda: setattr(bot, "disco", True)
-    bot.connection_start_time = datetime.now() - timedelta(hours=1, minutes=2, seconds=3)
+    bot.connection_start_time = datetime.now() - timedelta(hours=1, minutes=3, seconds=2)
     return bot
 
 async def _awaitable(val):
@@ -95,7 +97,6 @@ def test_set_bot_start_time_sets_global():
 
 @pytest.mark.asyncio
 async def test_bot_status_success_and_all_fields(monkeypatch, fake_bot):
-    """Should call bot.reply with a status message (list of lines)."""
     _admin.BOT_START_TIME = datetime.now() - timedelta(hours=2)
     _admin.JOINED_ROOMS.clear()
     _admin.JOINED_ROOMS["room1"] = {"nick": "anon1"}
@@ -110,7 +111,6 @@ async def test_bot_status_success_and_all_fields(monkeypatch, fake_bot):
         getloadavg=lambda : (1.23, 4.56, 7.89),
         cpu_count=lambda : 8
     ))
-    # Patch os.path.getsize
     monkeypatch.setattr(os.path, "getsize", lambda p: 12345)
     monkeypatch.setattr(os.path, "exists", lambda p: True)
     await _admin.bot_status(fake_bot, Sender(), "nick", [], DummyMsg(), False)
@@ -119,7 +119,6 @@ async def test_bot_status_success_and_all_fields(monkeypatch, fake_bot):
 
 @pytest.mark.asyncio
 async def test_bot_status_handles_db_missing_and_errors(monkeypatch, fake_bot):
-    # Remove db.path and bot_plugins; cause error in available_plugins
     fake_bot.db.path = None
     fake_bot.bot_plugins.discover = lambda: (_ for _ in ()).throw(ValueError("err"))
     # Patch psutil to throw
@@ -128,16 +127,13 @@ async def test_bot_status_handles_db_missing_and_errors(monkeypatch, fake_bot):
         getloadavg=lambda : (_ for _ in ()).throw(ValueError("fail")),
         cpu_count=lambda : (_ for _ in ()).throw(ValueError("fail"))
     ))
-    # Patch os.path.getsize to fail
     def raise_oserror_getsize(p):
         raise OSError()
     monkeypatch.setattr(os.path, "getsize", raise_oserror_getsize)
     monkeypatch.setattr(os.path, "exists", lambda p: False)
     _admin.JOINED_ROOMS.clear()
-    # Should not raise
     await _admin.bot_status(fake_bot, Sender(), "nick", [], DummyMsg(), False)
     replies = fake_bot._replies
-    # Should still reply something
     assert any(isinstance(r[0], list) or "Failed" in r[0] for r in replies)
 
 @pytest.mark.asyncio
@@ -159,31 +155,24 @@ async def test_bot_restart(monkeypatch, fake_bot, tmp_path):
         async def close(self): db_closed.append("close"); return None
         path = "/tmp/foo"
     fake_bot.db = FakeDB()
-    # Patch os.execvp to throw (because we can't actually exec)
     monkeypatch.setattr(_admin.os, "execvp", lambda exe, args: execvp_args.append((exe, args)) or (_ for _ in ()).throw(SystemExit))
-    # Patch writing notification to file
     notification_path = tmp_path / "notefile.json"
     monkeypatch.setattr(_admin, "RESTART_NOTIFICATION_FILE", str(notification_path))
     monkeypatch.setattr(_admin, "json", types.SimpleNamespace(dump=lambda data, f: file_json.update(data)))
-    # Patch sleep and wait_for
     async def immediate_sleep(*args, **kwargs): return None
     monkeypatch.setattr(_admin.asyncio, "sleep", immediate_sleep)
     monkeypatch.setattr(_admin.asyncio, "wait_for", immediate_sleep)
-    # Patch log
     monkeypatch.setattr(_admin, "log", types.SimpleNamespace(info=lambda *a, **k: None,
                                                              error=lambda *a, **k: None,
                                                              warning=lambda *a, **k: None,
                                                              debug=lambda *a, **k: None,
                                                              exception=lambda *a, **k: None))
     msg = DummyMsg(groupchat=True)
-    # Should not raise
     with pytest.raises(SystemExit):
         await _admin.bot_restart(fake_bot, Sender(), "nick", [], msg, True)
     assert disconnect_called == ["called"]
     assert db_closed == ["close"]
-    # Should have tried to exec
     assert execvp_args
-    # Should have notification data
     assert file_json["sender"] == "jid/sender"
     assert file_json["sender_bare"] == "jid"
     assert file_json["nick"] == "nick"
@@ -199,7 +188,6 @@ async def test_bot_restart_handles_file_write_fail(monkeypatch, fake_bot):
         path = "/tmp/foo"
     fake_bot.db = FakeDB()
     monkeypatch.setattr(_admin.os, "execvp", lambda exe, args: (_ for _ in ()).throw(SystemExit))
-    # Patch file open to raise
     def raise_oserror(*a, **k):
         raise OSError("fail")
     monkeypatch.setattr(builtins, "open", raise_oserror)
@@ -249,7 +237,6 @@ async def test_bot_shutdown_handles_errors(monkeypatch, fake_bot):
                                                              warning=lambda *a, **k: None))
     msg = DummyMsg()
     await _admin.bot_shutdown(fake_bot, Sender(), "nick", [], msg, False)
-    # should finish despite error in db.close
 
 @pytest.mark.asyncio
 async def test_on_load_sets_start_time(monkeypatch):
