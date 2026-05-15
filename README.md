@@ -150,7 +150,7 @@ Remember that the minimum version of Python is `Python3.12`.
 - [X] Plugin Management Plugin \[core\]
 - [X] User Management Plugin \[core\]
 - [X] Room Management Plugin \[core\]
-- [ ] Create Test Suite
+- [X] Create Test Suite
 - [X] Add more plugins
 - [ ] Improve documentation and usage examples
 - [X] Choosable Plugins per room
