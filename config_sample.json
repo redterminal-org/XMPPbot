@@ -26,5 +26,8 @@
   "avatar_type": "image/jpeg",
 
   "_comment101": "Maximum age for reminders in days. Reminders older than this will be rejected.",
-  "reminder_max_age_days": 365
+  "reminder_max_age_days": 365,
+  "_comment102": "rss feeds config",
+  "rss_global_query_interval": 1200,
+  "max_new_feed_entries": 5
 }

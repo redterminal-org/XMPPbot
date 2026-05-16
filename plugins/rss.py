@@ -51,6 +51,13 @@ MAX_BACKOFF_TIME = 86400  # 24 hours
 SIMILARITY_THRESHOLD = 0.8  # 80% similarity = duplicate
 
 
+def entry_get(entry, key, default=None):
+    # Works for both dicts and SimpleNamespace/objects
+    if isinstance(entry, dict):
+        return entry.get(key, default)
+    return getattr(entry, key, default)
+
+
 def html_to_text_with_links(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     for a in soup.find_all("a"):
@@ -107,21 +114,28 @@ def _should_include_description(title: str, description: str, similarity_thresho
 def _extract_entry_link(entry) -> str:
     """
     Extract the best link from an entry following feed standards.
+    Supports dict-style (feedparser) and object-style (SimpleNamespace) entries.
 
     For Atom feeds: Check entry.links with rel="alternate"
     For JSON Feed: Check entry.url
     Fallback: entry.id (if it's a URL)
 
     Args:
-        entry: Parsed feed entry
+        entry: Parsed feed entry (can be dict or object)
 
     Returns:
         Best available link URL or empty string
     """
 
+    def _get(e, key, default=None):
+        if isinstance(e, dict):
+            return e.get(key, default)
+        return getattr(e, key, default)
+
     # Atom standard: entry.links with rel="alternate"
-    if "links" in entry and isinstance(entry.links, list):
-        for link_obj in entry.links:
+    links = _get(entry, "links")
+    if links and isinstance(links, list):
+        for link_obj in links:
             if isinstance(link_obj, dict):
                 if link_obj.get("rel") in (None, "alternate"):
                     href = link_obj.get("href")
@@ -129,18 +143,17 @@ def _extract_entry_link(entry) -> str:
                         return href.strip()
 
     # Standard entry.link
-    entry_link = entry.get("link")
+    entry_link = _get(entry, "link")
     if entry_link and isinstance(entry_link, str) and entry_link.startswith(("http://", "https://")):
         return entry_link.strip()
 
     # JSON Feed standard: entry.url
-    entry_url = entry.get("url")
+    entry_url = _get(entry, "url")
     if entry_url and isinstance(entry_url, str) and entry_url.startswith(("http://", "https://")):
         return entry_url.strip()
 
     # Fallback: entry.id (if it's a URL)
-    # Note: entry.id is primarily for identification, not necessarily a URL
-    entry_id = entry.get("id")
+    entry_id = _get(entry, "id")
     if entry_id and isinstance(entry_id, str) and entry_id.startswith(("http://", "https://")):
         return entry_id.strip()
 
@@ -344,8 +357,8 @@ async def rss_check_loop(bot, store, url, period):
         for entry in parsed.entries:
             entry_link = _extract_entry_link(entry)
             entry_id = _generate_entry_id(
-                entry.get("title", ""),
-                entry.get("description", ""),
+                entry_get(entry, "title", ""),
+                entry_get(entry, "description", ""),
                 entry_link
             )
             if not entry_id:
@@ -359,14 +372,14 @@ async def rss_check_loop(bot, store, url, period):
         for entry in reversed(new_entries):
             entry_link = _extract_entry_link(entry)
             entry_id = _generate_entry_id(
-                entry.get("title", ""),
-                entry.get("description", ""),
+                entry_get(entry, "title", ""),
+                entry_get(entry, "description", ""),
                 entry_link
             )
             entry_title = html_to_text_with_links(
-                entry.get("title", "No title")
+                entry_get(entry, "title", "No title")
             )
-            entry_desc = html_to_text_with_links(entry.get("description", ""))
+            entry_desc = html_to_text_with_links(entry_get(entry, "description", ""))
 
             # Resolve relative URLs
             entry_link = _resolve_relative_url(feed_link, entry_link)
@@ -450,16 +463,10 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
 
     if sub == "add":
         if len(args) != 2:
-            bot.reply(
-                msg,
-                f"Usage: {config['prefix', ',']}rss add <url> (in a room or MUC DM only)",
-            )
+            bot.reply(msg, f"Usage: {config['prefix', ',']}rss add <url> (in a room or MUC DM only)")
             return
         if not room:
-            bot.reply(
-                msg,
-                "🔴  RSS add can only be used in a room or MUC DM.",
-            )
+            bot.reply(msg, "🔴  RSS add can only be used in a room or MUC DM.")
             return
         url = _normalize_url(args[1])
         feeds = await get_feeds(store)
@@ -468,25 +475,67 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
                 feed = await fetch_feed(url)
                 title = feed.feed.get("title", url)
                 feed_link = feed.feed.get("link", url)
+
+                # Burst last N (default 5) items to this room
+                burst_num = config.get("max_new_feed_entries", 5)
+                entries = feed.entries[:burst_num]
+                entries = list(reversed(entries))
+                last_id = None
+                if entries:
+                    for entry in entries:
+                        entry_link = _extract_entry_link(entry)
+                        entry_id = _generate_entry_id(
+                            entry_get(entry, "title", ""),
+                            entry_get(entry, "description", ""),
+                            entry_link
+                        )
+                        entry_title = html_to_text_with_links(entry_get(entry, "title", "No title"))
+                        entry_desc = html_to_text_with_links(entry_get(entry, "description", ""))
+
+                        # Resolve and normalize link
+                        entry_link = _resolve_relative_url(feed_link, entry_link)
+                        entry_link = _normalize_url(entry_link)
+
+                        if _should_include_description(entry_title, entry_desc):
+                            msg_text = f"[RSS] ({title}) {entry_title} - {entry_desc}\n"
+                        else:
+                            msg_text = f"[RSS] ({title}) {entry_title}\n"
+                        msg_text += f"{entry_link}"
+                        bot.reply(
+                            {
+                                "from": type("F", (), {"bare": room})(),
+                                "type": "groupchat",
+                            },
+                            msg_text,
+                            mention=False,
+                            thread=True,
+                            rate_limit=False,
+                            ephemeral=False,
+                        )
+                        last_id = entry_id  # Track last burst entry ID
+
+                # After burst, remember last_id (so next poll ignores already-shown history!)
+                feeds[url] = {
+                    "title": title,
+                    "link": feed_link,
+                    "period": config.get("rss_global_query_interval", DEFAULT_POLL_INTERVAL),
+                    "rooms": [room],
+                    "last_id": last_id,
+                    "error_count": 0,
+                    "next_retry": 0,
+                }
+                await save_feeds(store, feeds)
+                await ensure_task(bot, store, url, feeds[url]["period"])
+                await bot.db.users.flush_all()
+                log.info(f"[RSS] Added new feed {store}\n\n{feeds}")
+                bot.reply(
+                    msg,
+                    f"✅ Added feed: {title} ({url}) every {feeds[url]['period']}s to {room}",
+                )
             except Exception as e:
                 log.exception(f"Failed to fetch or parse feed {url}")
                 bot.reply(msg, f"Failed to fetch or parse feed: {e}")
                 return
-            feeds[url] = {
-                "title": title,
-                "link": feed_link,
-                "period": DEFAULT_POLL_INTERVAL,
-                "rooms": [room],
-                "last_id": None,
-                "error_count": 0,
-                "next_retry": 0,
-            }
-            await save_feeds(store, feeds)
-            await ensure_task(bot, store, url, feeds[url]["period"])
-            bot.reply(
-                msg,
-                f"✅ Added feed: {title} ({url}) every {DEFAULT_POLL_INTERVAL}s to {room}",
-            )
         else:
             if room not in feeds[url]["rooms"]:
                 feeds[url]["rooms"].append(room)
