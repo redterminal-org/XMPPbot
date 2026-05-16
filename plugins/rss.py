@@ -435,6 +435,50 @@ async def restart_all_tasks(bot):
         period = feed.get("period", DEFAULT_POLL_INTERVAL)
         await ensure_task(bot, store, url, period)
 
+# --------- NEW HELPER FUNCTION ---------
+async def burst_recent_entries(bot, feed, room, burst_num):
+    """
+    Burst the last N entries of the given feed to the room.
+    """
+    title = feed.feed.get("title", "")
+    feed_link = feed.feed.get("link", "")
+    entries = feed.entries[:burst_num]
+    entries = list(reversed(entries))
+    last_id = None
+
+    for entry in entries:
+        entry_link = _extract_entry_link(entry)
+        entry_id = _generate_entry_id(
+            entry_get(entry, "title", ""),
+            entry_get(entry, "description", ""),
+            entry_link
+        )
+        entry_title = html_to_text_with_links(entry_get(entry, "title", "No title"))
+        entry_desc = html_to_text_with_links(entry_get(entry, "description", ""))
+
+        # Resolve and normalize link
+        entry_link = _resolve_relative_url(feed_link, entry_link)
+        entry_link = _normalize_url(entry_link)
+
+        if _should_include_description(entry_title, entry_desc):
+            msg_text = f"[RSS] ({title}) {entry_title} - {entry_desc}\n"
+        else:
+            msg_text = f"[RSS] ({title}) {entry_title}\n"
+        msg_text += f"{entry_link}"
+        bot.reply(
+            {
+                "from": type("F", (), {"bare": room})(),
+                "type": "groupchat",
+            },
+            msg_text,
+            mention=False,
+            thread=True,
+            rate_limit=False,
+            ephemeral=False,
+        )
+        last_id = entry_id  # Track last burst entry ID
+    return last_id
+# --------------------------------------
 
 @command("rss", role=Role.MODERATOR)
 async def rss_command(bot, sender_jid, nick, args, msg, is_room):
@@ -478,41 +522,7 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
 
                 # Burst last N (default 5) items to this room
                 burst_num = config.get("max_new_feed_entries", 5)
-                entries = feed.entries[:burst_num]
-                entries = list(reversed(entries))
-                last_id = None
-                if entries:
-                    for entry in entries:
-                        entry_link = _extract_entry_link(entry)
-                        entry_id = _generate_entry_id(
-                            entry_get(entry, "title", ""),
-                            entry_get(entry, "description", ""),
-                            entry_link
-                        )
-                        entry_title = html_to_text_with_links(entry_get(entry, "title", "No title"))
-                        entry_desc = html_to_text_with_links(entry_get(entry, "description", ""))
-
-                        # Resolve and normalize link
-                        entry_link = _resolve_relative_url(feed_link, entry_link)
-                        entry_link = _normalize_url(entry_link)
-
-                        if _should_include_description(entry_title, entry_desc):
-                            msg_text = f"[RSS] ({title}) {entry_title} - {entry_desc}\n"
-                        else:
-                            msg_text = f"[RSS] ({title}) {entry_title}\n"
-                        msg_text += f"{entry_link}"
-                        bot.reply(
-                            {
-                                "from": type("F", (), {"bare": room})(),
-                                "type": "groupchat",
-                            },
-                            msg_text,
-                            mention=False,
-                            thread=True,
-                            rate_limit=False,
-                            ephemeral=False,
-                        )
-                        last_id = entry_id  # Track last burst entry ID
+                last_id = await burst_recent_entries(bot, feed, room, burst_num)
 
                 # After burst, remember last_id (so next poll ignores already-shown history!)
                 feeds[url] = {
@@ -544,6 +554,14 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
                 await ensure_task(
                     bot, store, url, feeds[url]["period"]
                 )
+                # --- NEW: Burst most recent N entries to this newly added room ---
+                try:
+                    feed = await fetch_feed(url)
+                    burst_num = config.get("max_new_feed_entries", 5)
+                    await burst_recent_entries(bot, feed, room, burst_num)
+                except Exception as e:
+                    log.exception(f"Failed to fetch or parse feed during burst to new room: {url}: {e}")
+                # -----------------------------------------------------------------
                 bot.reply(
                     msg,
                     f"✅ Added room {room} to feed:" +
@@ -653,3 +671,4 @@ async def on_unload(bot):
             log.exception(f"[RSS] Error cancelling task for {url}: {e}")
 
     log.info("[RSS] ✅ All RSS tasks cleaned up")
+
