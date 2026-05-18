@@ -66,6 +66,7 @@ class Bot(slixmpp.ClientXMPP):
         self.register_plugin("xep_0054")
         self.register_plugin("xep_0084")
         self.register_plugin("xep_0092")
+        self.register_plugin("xep_0153")
         self.register_plugin("xep_0163")
         self.register_plugin("xep_0199")
         self.register_plugin("xep_0359")

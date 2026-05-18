@@ -254,11 +254,14 @@ async def update_avatar(bot):
         return
 
     try:
-
         with open(avatar_path, "rb") as f:
             avatar = f.read()
 
-        new_hash = sha1(avatar)
+        image_hash = sha1(avatar)
+
+        # v2 marker forces one republish after this change, even if the old
+        # avatar_hash.asc already contains the raw SHA1 from the XEP-0084-only code.
+        new_hash = f"v2:{image_hash}"
         stored_hash = read_hash(AVATAR_HASH_FILE)
 
         if stored_hash == new_hash:
@@ -269,20 +272,26 @@ async def update_avatar(bot):
             log.error("[_REG_PROFILE]🔴 Avatar must be PNG or JPEG")
             return
 
+        # XEP-0084 / PEP avatar for modern clients.
         pubsub = bot["xep_0084"]
-
         await pubsub.publish_avatar(avatar)
-
         await pubsub.publish_avatar_metadata([
             {
-                "id": new_hash,
-                "type": f"{avatar_type}",
-                "bytes": len(avatar)
+                "id": image_hash,
+                "type": avatar_type,
+                "bytes": len(avatar),
             }
         ])
 
-        write_hash(AVATAR_HASH_FILE, new_hash)
+        # XEP-0153 / vCard-based avatar for clients and MUC views
+        # that still rely on vCard PHOTO/BINVAL + presence hash.
+        await bot["xep_0153"].set_avatar(
+            jid=bot.boundjid.bare,
+            avatar=avatar,
+            mtype=avatar_type,
+        )
 
+        write_hash(AVATAR_HASH_FILE, new_hash)
         log.info("[_REG_PROFILE]✅ Avatar updated")
 
     except Exception as e:
@@ -356,8 +365,9 @@ async def on_load(bot):
     """
 
     bot.register_plugin("xep_0054")
-    bot.register_plugin("xep_0163")
     bot.register_plugin("xep_0084")
+    bot.register_plugin("xep_0153")
+    bot.register_plugin("xep_0163")
 
     await setup_profile(bot)
 
