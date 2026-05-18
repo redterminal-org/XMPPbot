@@ -705,7 +705,7 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
 
                 bot.reply(
                     msg,
-                    f"️ Removed this room from feed: {url}",
+                    f"🗑 Removed this room from feed: {url}",
                 )
         else:
             bot.reply(
