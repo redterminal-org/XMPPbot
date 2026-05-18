@@ -4,9 +4,9 @@ Periodically checks configured RSS/Atom feeds every 20 minutes.
 You can add/delete specified feeds to your room.
 
 Commands:
-{prefix}rss add <feedurl>
-{prefix}rss delete <feedurl>
-{prefix}rss list
+• {prefix}rss add <feedurl>
+• {prefix}rss delete <feedurl>
+• {prefix}rss list
 
 Feed configuration is stored in the plugin runtime store under the key "RSS".
 """
@@ -586,7 +586,7 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
             return
 
         if not room:
-            bot.reply(msg, " RSS add can only be used in a room or MUC DM.")
+            bot.reply(msg, "🔴 RSS add can only be used in a room or MUC DM.")
             return
 
         url = _normalize_url(args[1])
@@ -668,7 +668,7 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
         if not room:
             bot.reply(
                 msg,
-                " RSS delete can only be used in a room or MUC DM.",
+                "🔴 RSS delete can only be used in a room or MUC DM.",
             )
             return
 
@@ -693,7 +693,7 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
 
                 bot.reply(
                     msg,
-                    f"️ Deleted feed: {url} (no rooms left, feed removed)",
+                    f"🗑 Deleted feed: {url} (no rooms left, feed removed)",
                 )
             else:
                 await ensure_task(
