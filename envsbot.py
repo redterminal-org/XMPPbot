@@ -12,7 +12,13 @@ from datetime import datetime
 from utils.presence_manager import PresenceManager
 from utils.plugin_manager import PluginManager
 from utils.rate_limiter import TokenBucketRateLimiter
-from utils.config import config, setup_logging
+from utils.config import (
+    ConfigError,
+    config,
+    exit_on_config_error,
+    setup_logging,
+    validate_startup_config,
+)
 from utils.command import (
     resolve_command,
     check_permission,
@@ -537,6 +543,11 @@ def get_latest_git_tag():
 # -------------------------------------------------
 
 async def main():
+    try:
+        validate_startup_config(config)
+    except ConfigError as e:
+        exit_on_config_error(e)
+
     xmpp = Bot()
 
     # startup bot
