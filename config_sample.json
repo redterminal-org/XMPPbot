@@ -6,7 +6,12 @@
   "jid": "<botname>@domain.tld",
   "password": "<password>",
   "nick": "<bot nick>",
-  "_comment1_1": "The 'timezone' key holds the timezone for the bot. It is used for the reminder plugin and for displaying times in the 'time' command for example. You can find a list of valid timezones at https://en.wikipedia.org/wiki/List_of_tz_database_time_zones. Use the 'TZ identifier' from the list. Setting a <TZ></TZ> field in your vcard.py won't be recognized.",
+
+  "_comment1_1": "Optional 'host' and 'port' if they differ from the jid and the normal port. Delete if not used.",
+  "host": "domain.tld",
+  "port": 5222,
+
+  "_comment1_2": "The 'timezone' key holds the timezone for the bot. It is used for the reminder plugin and for displaying times in the 'time' command for example. You can find a list of valid timezones at https://en.wikipedia.org/wiki/List_of_tz_database_time_zones. Use the 'TZ identifier' from the list. Setting a <TZ></TZ> field in your vcard.py won't be recognized.",
   "timezone": "Europe/Berlin",
 
   "_comment2": "The 'owner' key holds the bare XMPP JID of the allmighty owner of the bot for administration",

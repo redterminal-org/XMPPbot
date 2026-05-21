@@ -551,7 +551,8 @@ async def main():
     xmpp = Bot()
 
     # startup bot
-    await xmpp.connect()
+    await xmpp.connect(host=config.get("host", None),
+                       port=config.get("port", None))
 
     log.info("[XMPP] ✅ Connected successfully. Starting event loop...")
 
