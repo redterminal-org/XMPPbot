@@ -288,14 +288,14 @@ def test_validate_config_rejects_invalid_admin_jid():
     assert "admins[1]:" in str(exc.value)
 
 
-def test_validate_config_accepts_host_and_server_strings():
+def test_validate_config_accepts_host_and_port():
     cfg = {
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
         "nick": "envsbot",
         "host": "xmpp.example.org",
-        "server": "example.org",
+        "port": 5222,
     }
 
     config_mod.validate_config(cfg, require_required_keys=True)
@@ -316,19 +316,35 @@ def test_validate_config_rejects_invalid_host_type():
     assert "host: expected string" in str(exc.value)
 
 
-def test_validate_config_rejects_invalid_server_type():
+def test_validate_config_rejects_invalid_port_type():
     cfg = {
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
         "nick": "envsbot",
-        "server": 123,
+        "port": "5222",
     }
 
     with pytest.raises(config_mod.ConfigError) as exc:
         config_mod.validate_config(cfg, require_required_keys=True)
 
-    assert "server: expected string" in str(exc.value)
+    assert "port: expected int" in str(exc.value)
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536])
+def test_validate_config_rejects_invalid_port_range(port):
+    cfg = {
+        "jid": "bot@example.org",
+        "password": "secret",
+        "owner": "owner@example.org",
+        "nick": "envsbot",
+        "port": port,
+    }
+
+    with pytest.raises(config_mod.ConfigError) as exc:
+        config_mod.validate_config(cfg, require_required_keys=True)
+
+    assert "port: must be between 1 and 65535" in str(exc.value)
 
 
 def test_validate_config_rejects_invalid_timezone():
