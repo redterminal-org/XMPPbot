@@ -33,7 +33,7 @@ OPTIONAL_CONFIG_TYPES = {
     "avatar_type": str,
     "timezone": str,
     "host": str,
-    "server": str,
+    "port": int,
     "rss_global_query_interval": int,
     "max_new_feed_entries": int,
 }
@@ -85,6 +85,11 @@ def _validate_numeric_ranges(cfg, errors):
         value = cfg["max_new_feed_entries"]
         if isinstance(value, int) and value < 0:
             errors.append("max_new_feed_entries: must be 0 or greater")
+
+    if "port" in cfg:
+        value = cfg["port"]
+        if isinstance(value, int) and not (1 <= value <= 65535):
+            errors.append("port: must be between 1 and 65535")
 
 
 def _validate_timezone(cfg, errors):

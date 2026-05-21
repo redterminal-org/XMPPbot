@@ -551,8 +551,13 @@ async def main():
     xmpp = Bot()
 
     # startup bot
-    await xmpp.connect(host=config.get("host", None),
-                       port=config.get("port", None))
+    host = config.get("host")
+    port = config.get("port")
+
+    if host or port:
+        await xmpp.connect(address=(host or xmpp.boundjid.domain, port or 5222))
+    else:
+        await xmpp.connect()
 
     log.info("[XMPP] ✅ Connected successfully. Starting event loop...")
 
