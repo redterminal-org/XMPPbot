@@ -10,7 +10,7 @@ def fake_bot():
     bot = Mock()
     bot.prefix = "!"
     bot.db = Mock()
-    bot.db.users.plugin = AsyncMock(return_value=Mock())
+    bot.db.users.plugin = Mock(return_value=Mock())
     bot.reply = Mock()
     bot.get_user_role = AsyncMock(return_value=0)  # 0 for admin
     bot.presence = Mock()
@@ -136,5 +136,5 @@ async def test_presence_set_disabled(fake_bot, fake_msg, monkeypatch):
 async def test_get_presence_store(fake_bot):
     # Verifies it proxies to db.users.plugin
     plugin_store = await presence.get_presence_store(fake_bot)
-    fake_bot.db.users.plugin.assert_awaited_with("presence")
+    fake_bot.db.users.plugin.assert_called_with("presence")
 
