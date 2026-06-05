@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "envsbot"
-version = "0.5.0"
+version = "1.0.0"
 description = "A modular plugin-driven XMPP bot framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,7 +31,7 @@ keywords = [
 ]
 
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Stable",
     "Intended Audience :: Developers, XMPP operators",
     "Topic :: Communications :: Chat",
     "License :: OSI Approved :: GPL-3.0-only",
