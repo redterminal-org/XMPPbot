@@ -531,126 +531,22 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
     if not room:
         bot.reply(
             msg,
-            "ℹ️ This command only works in rooms or MUC private messages.")
+            "ℹ️ This command only works in rooms or MUC private messages.",
+        )
         return
 
     subcmd = str(args[0]).lower()
 
     if subcmd == "list":
-        if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
-            bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
-            return
-
-        page = 1
-        if len(args) >= 2:
-            try:
-                page = max(1, int(args[1]))
-            except ValueError:
-                bot.reply(msg, f"❌ Usage: {_prefix()}pin list [page]")
-                return
-
-        state = await _load_pin_data(bot)
-        bucket = _room_bucket(state, room)
-        pins = list(bucket.get(PINS_FIELD, []))
-        pins.sort(key=lambda x: int(x.get("id", 0)), reverse=True)
-
-        if not pins:
-            bot.reply(msg, "📌 No pinned messages stored for this room.",
-                      mention=False)
-            return
-
-        page_items, page, total_pages, total = paginate_items(pins, page,
-                                                              PAGE_SIZE)
-
-        lines = [f"📌 Pins for {
-            room} ({total}) - Page {page}/{total_pages}", ""]
-        lines.extend(_format_pin_line(entry) for entry in page_items)
-
-        if page < total_pages:
-            lines.append("")
-            lines.append(f"Use {_prefix()}pin list {
-                         page + 1} for the next page.")
-
-        bot.reply(msg, lines, mention=False)
+        await _pin_command_list(bot, msg, room, args)
         return
 
     if subcmd == "show":
-        if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
-            bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
-            return
-
-        if len(args) < 2:
-            bot.reply(msg, f"❌ Usage: {_prefix()}pin show <id>")
-            return
-
-        try:
-            pin_id = int(args[1])
-        except ValueError:
-            bot.reply(msg, f"❌ Usage: {_prefix()}pin show <id>")
-            return
-
-        state = await _load_pin_data(bot)
-        bucket = _room_bucket(state, room)
-        entry = _find_pin(bucket, pin_id)
-
-        if not entry:
-            bot.reply(msg, f"❌ Pin #{pin_id} not found in this room.")
-            return
-
-        lines = [
-            f"📌 Pin #{entry.get('id')}",
-            f"Room: {entry.get('room') or room}",
-            f"Created: {_format_timestamp(entry.get('created_at'))}",
-            f"Pinned by: {entry.get('actor_nick') or 'unknown'} ({
-                entry.get('actor_jid') or 'unknown'})",
-            f"Target nick: {entry.get('target_nick') or 'unknown'}",
-            f"Reply target id: {entry.get('reply_id') or 'unknown'}",
-            f"Target stanza id: {entry.get('target_stanza_id') or 'unknown'}",
-            f"Source: {entry.get('source') or 'unknown'}",
-        ]
-
-        preview = entry.get("preview")
-        if preview:
-            lines.extend(["", "Preview:", preview])
-
-        full_text = entry.get("target_text")
-        if full_text:
-            lines.extend(["", "Pinned text:", full_text])
-
-        bot.reply(msg, lines, mention=False)
+        await _pin_command_show(bot, msg, room, args)
         return
 
     if subcmd == "delete":
-        if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
-            bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
-            return
-
-        # permission guard
-        if not await _sender_can_manage_pins_in_room(bot, msg, room):
-            bot.reply(msg,
-                      "⛔ Only room moderators/admins/owners can delete pins.",
-                      mention=False)
-            return
-
-        if len(args) < 2:
-            bot.reply(msg, f"❌ Usage: {_prefix()}pin delete <id>")
-            return
-
-        try:
-            pin_id = int(args[1])
-        except ValueError:
-            bot.reply(msg, f"❌ Usage: {_prefix()}pin delete <id>")
-            return
-
-        state = await _load_pin_data(bot)
-        bucket = _room_bucket(state, room)
-
-        if not _delete_pin(bucket, pin_id):
-            bot.reply(msg, f"❌ Pin #{pin_id} not found in this room.")
-            return
-
-        await _save_pin_data(bot, state)
-        bot.reply(msg, f"✅ Deleted pin #{pin_id}.", mention=False)
+        await _pin_command_delete(bot, msg, room, args)
         return
 
     if subcmd != "add":
@@ -664,63 +560,192 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         )
         return
 
+    await _pin_command_add(bot, sender_jid, nick, msg, room, is_room, args)
+
+
+async def _pin_command_list(bot, msg, room, args):
+    if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
+        bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
+        return
+
+    page = 1
+    if len(args) >= 2:
+        try:
+            page = max(1, int(args[1]))
+        except ValueError:
+            bot.reply(msg, f"❌ Usage: {_prefix()}pin list [page]")
+            return
+
+    state = await _load_pin_data(bot)
+    bucket = _room_bucket(state, room)
+    pins = list(bucket.get(PINS_FIELD, []))
+    pins.sort(key=lambda x: int(x.get("id", 0)), reverse=True)
+
+    if not pins:
+        bot.reply(msg, "📌 No pinned messages stored for this room.",
+                  mention=False)
+        return
+
+    page_items, page, total_pages, total = paginate_items(pins, page,
+                                                          PAGE_SIZE)
+
+    lines = [f"📌 Pins for {room} ({total}) - Page {page}/{total_pages}", ""]
+    lines.extend(_format_pin_line(entry) for entry in page_items)
+
+    if page < total_pages:
+        lines.append("")
+        lines.append(f"Use {_prefix()}pin list {page + 1} for the next page.")
+
+    bot.reply(msg, lines, mention=False)
+
+
+async def _pin_command_show(bot, msg, room, args):
+    if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
+        bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
+        return
+
+    if len(args) < 2:
+        bot.reply(msg, f"❌ Usage: {_prefix()}pin show <id>")
+        return
+
+    try:
+        pin_id = int(args[1])
+    except ValueError:
+        bot.reply(msg, f"❌ Usage: {_prefix()}pin show <id>")
+        return
+
+    state = await _load_pin_data(bot)
+    bucket = _room_bucket(state, room)
+    entry = _find_pin(bucket, pin_id)
+
+    if not entry:
+        bot.reply(msg, f"❌ Pin #{pin_id} not found in this room.")
+        return
+
+    lines = [
+        f"📌 Pin #{entry.get('id')}",
+        f"Room: {entry.get('room') or room}",
+        f"Created: {_format_timestamp(entry.get('created_at'))}",
+        f"Pinned by: {entry.get('actor_nick') or 'unknown'}"
+        f" ({entry.get('actor_jid') or 'unknown'})",
+        f"Target nick: {entry.get('target_nick') or 'unknown'}",
+        f"Reply target id: {entry.get('reply_id') or 'unknown'}",
+        f"Target stanza id: {entry.get('target_stanza_id') or 'unknown'}",
+        f"Source: {entry.get('source') or 'unknown'}",
+    ]
+
+    preview = entry.get("preview")
+    if preview:
+        lines.extend(["", "Preview:", preview])
+
+    full_text = entry.get("target_text")
+    if full_text:
+        lines.extend(["", "Pinned text:", full_text])
+
+    bot.reply(msg, lines, mention=False)
+
+
+async def _pin_command_delete(bot, msg, room, args):
+    if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
+        bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
+        return
+
+    if not await _sender_can_manage_pins_in_room(bot, msg, room):
+        bot.reply(
+            msg,
+            "⛔ Only room moderators/admins/owners can delete pins.",
+            mention=False,
+        )
+        return
+
+    if len(args) < 2:
+        bot.reply(msg, f"❌ Usage: {_prefix()}pin delete <id>")
+        return
+
+    try:
+        pin_id = int(args[1])
+    except ValueError:
+        bot.reply(msg, f"❌ Usage: {_prefix()}pin delete <id>")
+        return
+
+    state = await _load_pin_data(bot)
+    bucket = _room_bucket(state, room)
+
+    if not _delete_pin(bucket, pin_id):
+        bot.reply(msg, f"❌ Pin #{pin_id} not found in this room.")
+        return
+
+    await _save_pin_data(bot, state)
+    bot.reply(msg, f"✅ Deleted pin #{pin_id}.", mention=False)
+
+
+async def _pin_command_add(bot, sender_jid, nick, msg, room, is_room, args):
     if not is_room:
-        bot.reply(msg, f"ℹ️ To create a pin, use {
-                  _prefix()}pin add as a reply or {_prefix()}pin add last")
+        bot.reply(
+            msg,
+            f"ℹ️ To create a pin, use {_prefix()}pin add as a reply"
+            f" or {_prefix()}pin add last",
+        )
         return
 
     if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
         bot.reply(msg, "ℹ️ Pin plugin is disabled in this room.")
         return
 
-    # permission guard for manual add/add last
     if not await _sender_can_manage_pins_in_room(bot, msg, room):
-        bot.reply(msg, "⛔ Only room moderators/admins/owners can add pins.",
-                  mention=False)
+        bot.reply(
+            msg,
+            "⛔ Only room moderators/admins/owners can add pins.",
+            mention=False,
+        )
         return
 
     if len(args) >= 2 and str(args[1]).lower() == "last":
-        offset = 1
-        if len(args) >= 3:
-            try:
-                offset = int(args[2])
-                if offset < 1:
-                    raise ValueError
-            except ValueError:
-                bot.reply(msg, f"❌ Usage: {_prefix()}pin add last [n]")
-                return
-
-        recent_entry = _get_recent_target(room, offset=offset)
-        if not recent_entry:
-            if offset == 1:
-                bot.reply(msg, f"❌ No suitable cached message found for {
-                          _prefix()}pin add last")
-            else:
-                bot.reply(msg, f"❌ No suitable cached message found for {
-                          _prefix()}pin add last {offset}")
-            return
-
-        await _create_pin_entry(
-            bot=bot,
-            msg=msg,
-            room=room,
-            sender_jid=sender_jid,
-            nick=nick,
-            target_text=recent_entry.get("body"),
-            target_nick=recent_entry.get("nick") or "unknown",
-            target_stanza_id=recent_entry.get("stanza_id"),
-            reply_id=None,
-            quote_text=None,
-            cmd_body=msg.get("body", "") or "",
-            source=f"last-{offset}",
-        )
+        await _pin_command_add_last(bot, sender_jid, nick, msg, room, args)
         return
 
     bot.reply(
         msg,
-        f"❌ Reply to a room message and then send {_prefix()}pin add, or use {
-            _prefix()}pin add last",
+        f"❌ Reply to a room message and then send {_prefix()}pin add, or"
+        f" use {_prefix()}pin add last",
         mention=False,
+    )
+
+
+async def _pin_command_add_last(bot, sender_jid, nick, msg, room, args):
+    offset = 1
+    if len(args) >= 3:
+        try:
+            offset = int(args[2])
+            if offset < 1:
+                raise ValueError
+        except ValueError:
+            bot.reply(msg, f"❌ Usage: {_prefix()}pin add last [n]")
+            return
+
+    recent_entry = _get_recent_target(room, offset=offset)
+    if not recent_entry:
+        if offset == 1:
+            bot.reply(msg, f"❌ No suitable cached message found for"
+                           f" {_prefix()}pin add last")
+        else:
+            bot.reply(msg, f"❌ No suitable cached message found for"
+                           f" {_prefix()}pin add last {offset}")
+        return
+
+    await _create_pin_entry(
+        bot=bot,
+        msg=msg,
+        room=room,
+        sender_jid=sender_jid,
+        nick=nick,
+        target_text=recent_entry.get("body"),
+        target_nick=recent_entry.get("nick") or "unknown",
+        target_stanza_id=recent_entry.get("stanza_id"),
+        reply_id=None,
+        quote_text=None,
+        cmd_body=msg.get("body", "") or "",
+        source=f"last-{offset}",
     )
 
 
