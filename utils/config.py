@@ -72,7 +72,8 @@ def _validate_jid(value, key, errors):
         return
 
     if not jid.user or not jid.domain:
-        errors.append(f"{key}: must include localpart and domain, e.g. user@example.org")
+        errors.append(
+            f"{key}: must include localpart and domain, e.g. user@example.org")
 
 
 def _validate_numeric_ranges(cfg, errors):
@@ -101,7 +102,8 @@ def _validate_timezone(cfg, errors):
         return
 
     if timezone not in available_timezones():
-        errors.append("timezone: must be a valid IANA timezone, e.g. Europe/Berlin")
+        errors.append(
+            "timezone: must be a valid IANA timezone, e.g. Europe/Berlin")
 
 
 def _validate_avatar(cfg, errors, warnings):
@@ -115,10 +117,12 @@ def _validate_avatar(cfg, errors, warnings):
         suffix = Path(avatar).suffix.lower()
 
         if avatar_type == "image/png" and suffix != ".png":
-            warnings.append("avatar: file extension does not match avatar_type image/png")
+            warnings.append(
+                "avatar: file extension does not match avatar_type image/png")
 
         if avatar_type == "image/jpeg" and suffix not in (".jpg", ".jpeg"):
-            warnings.append("avatar: file extension does not match avatar_type image/jpeg")
+            warnings.append(
+                "avatar: file extension does not match avatar_type image/jpeg")
 
     if avatar:
         avatar_path = Path(avatar)
@@ -138,6 +142,41 @@ def collect_config_warnings(cfg):
 
     _validate_avatar(cfg, [], warnings)
     return warnings
+
+
+def check_required_keys(cfg):
+    errors = []
+    for key, expected_type in REQUIRED_CONFIG_KEYS.items():
+        if key not in cfg:
+            errors.append(f"Missing required key: {key}")
+            continue
+
+        if expected_type is str:
+            _validate_string(cfg[key], key, errors)
+        elif not isinstance(cfg[key], expected_type):
+            errors.append(
+                f"{key}: expected {expected_type.__name__}, "
+                f"got {type(cfg[key]).__name__}"
+            )
+    return errors
+
+
+def check_optional_keys(cfg):
+    errors = []
+    for key, expected_type in OPTIONAL_CONFIG_TYPES.items():
+        if key not in cfg:
+            continue
+
+        value = cfg[key]
+
+        if expected_type is str:
+            _validate_string(value, key, errors)
+        elif not isinstance(value, expected_type):
+            errors.append(
+                f"{key}: expected {expected_type.__name__}, "
+                f"got {type(value).__name__}"
+            )
+    return errors
 
 
 def validate_config(cfg, require_required_keys=False):
@@ -162,21 +201,11 @@ def validate_config(cfg, require_required_keys=False):
     warnings = []
 
     if not isinstance(cfg, dict):
-        raise ConfigError("config.json must contain a JSON object at top level")
+        raise ConfigError(
+            "config.json must contain a JSON object at top level")
 
     if require_required_keys:
-        for key, expected_type in REQUIRED_CONFIG_KEYS.items():
-            if key not in cfg:
-                errors.append(f"Missing required key: {key}")
-                continue
-
-            if expected_type is str:
-                _validate_string(cfg[key], key, errors)
-            elif not isinstance(cfg[key], expected_type):
-                errors.append(
-                    f"{key}: expected {expected_type.__name__}, "
-                    f"got {type(cfg[key]).__name__}"
-                )
+        errors = check_required_keys(cfg)
 
         if "jid" in cfg:
             _validate_jid(cfg["jid"], "jid", errors)
@@ -184,21 +213,10 @@ def validate_config(cfg, require_required_keys=False):
         if "owner" in cfg:
             _validate_jid(cfg["owner"], "owner", errors)
 
-    for key, expected_type in OPTIONAL_CONFIG_TYPES.items():
-        if key not in cfg:
-            continue
+    errors.extend(check_optional_keys(cfg))
 
-        value = cfg[key]
-
-        if expected_type is str:
-            _validate_string(value, key, errors)
-        elif not isinstance(value, expected_type):
-            errors.append(
-                f"{key}: expected {expected_type.__name__}, "
-                f"got {type(value).__name__}"
-            )
-
-    if "prefix" in cfg and isinstance(cfg["prefix"], str) and not cfg["prefix"]:
+    if ("prefix" in cfg and isinstance(cfg["prefix"], str) and
+            not cfg["prefix"]):
         errors.append("prefix: must not be empty")
 
     if "loglevel" in cfg and isinstance(cfg["loglevel"], str):
@@ -255,7 +273,8 @@ def load_config(require_required_keys=False):
         raise ConfigError(f"Failed to load config.json: {e}") from e
 
     if not isinstance(loaded, dict):
-        raise ConfigError("config.json must contain a JSON object at top level")
+        raise ConfigError(
+            "config.json must contain a JSON object at top level")
 
     cfg.update(loaded)
     validate_config(cfg, require_required_keys=require_required_keys)
@@ -295,7 +314,8 @@ def setup_logging():
     """
     Initialize the logging system.
     """
-    log_level = getattr(logging, config.get("loglevel", "INFO").upper(), logging.INFO)
+    log_level = getattr(logging, config.get(
+        "loglevel", "INFO").upper(), logging.INFO)
 
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)

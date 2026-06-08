@@ -25,7 +25,6 @@ session starts or on plugin reload.
 """
 
 import hashlib
-import json
 import logging
 import os
 import importlib.util
@@ -176,7 +175,8 @@ async def update_vcard(bot):
     plugin_dir = os.path.dirname(os.path.abspath(__file__))
     vcard_py_path = os.path.join(os.path.dirname(plugin_dir), "vcard.py")
     if not os.path.exists(vcard_py_path):
-        log.warning("[_REG_PROFILE] vcard.py does not exist. Skipping vCard update.")
+        log.warning(
+            "[_REG_PROFILE] vcard.py does not exist. Skipping vCard update.")
         return
 
     try:
@@ -185,7 +185,8 @@ async def update_vcard(bot):
         spec.loader.exec_module(vcardmod)
         VCARD = vcardmod.VCARD
         if not isinstance(VCARD, str):
-            log.error("[_REG_PROFILE] VCARD variable in vcard.py is not a string!")
+            log.error(
+                "[_REG_PROFILE] VCARD variable in vcard.py is not a string!")
             return
     except Exception as e:
         log.error(f"[_REG_PROFILE] Error importing vcard.py: {e}")
@@ -196,7 +197,9 @@ async def update_vcard(bot):
     new_hash = sha1(serialized)
     stored_hash = read_hash(VCARD_HASH_FILE)
     if stored_hash == new_hash:
-        log.info("[_REG_PROFILE] vCard (from vcard.py/XML) unchanged — skipping update")
+        log.info(
+            "[_REG_PROFILE] vCard (from vcard.py/XML) unchanged"
+            " — skipping update")
         return
 
     try:
@@ -207,7 +210,8 @@ async def update_vcard(bot):
         write_hash(VCARD_HASH_FILE, new_hash)
         log.info("[_REG_PROFILE]✅ vCard (from vcard.py, XML string) updated")
     except Exception as e:
-        log.error(f"[_REG_PROFILE]🔴 vCard upload from vcard.py (XML) failed: {e}")
+        log.error(
+            f"[_REG_PROFILE]🔴 vCard upload from vcard.py (XML) failed: {e}")
 
 
 # -------------------------------------------------
@@ -260,7 +264,8 @@ async def update_avatar(bot):
         image_hash = sha1(avatar)
 
         # v2 marker forces one republish after this change, even if the old
-        # avatar_hash.asc already contains the raw SHA1 from the XEP-0084-only code.
+        # avatar_hash.asc already contains the raw SHA1 from the XEP-0084-only
+        # code.
         new_hash = f"v2:{image_hash}"
         stored_hash = read_hash(AVATAR_HASH_FILE)
 

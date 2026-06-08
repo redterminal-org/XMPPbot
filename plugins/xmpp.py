@@ -40,7 +40,8 @@ XMPP_KEY = "XMPP"
 PLUGIN_META = {
     "name": "xmpp",
     "version": "0.2.2",
-    "description": "XMPP utility tools (ping, diagnostics, service discovery, DNS SRV, etc.)",
+    "description":
+    "XMPP utility tools (ping, diagnostics, service discovery, DNS SRV, etc.)",
     "category": "tools",
     "requires": ["rooms", "_core"],
 }
@@ -102,7 +103,8 @@ def inform_if_jid(msg, target, bot, command_name, domain_only=False):
     if "@" in target:
         domain = get_domain_from_jid(target)
         if domain_only:
-            bot.reply(msg, f"Note: '{command_name}' only works with domains. Using '{domain}' from '{target}'.")
+            bot.reply(msg, f"Note: '{command_name}' only works with domains."
+                           f" Using '{domain}' from '{target}'.")
         return domain
     return target
 
@@ -121,7 +123,8 @@ def _validate_domain(domain: str) -> tuple[bool, str]:
 
     # Must contain at least one dot (example.com, not just "localhost")
     if '.' not in domain:
-        return False, f"'{domain}' is not a valid domain (must have at least one dot, e.g., example.com)"
+        return False, (f"'{domain}' is not a valid domain (must have at"
+                       f" least one dot, e.g., example.com)")
 
     # Check each label
     labels = domain.split('.')
@@ -129,7 +132,8 @@ def _validate_domain(domain: str) -> tuple[bool, str]:
         if not label:
             return False, f"'{domain}' has empty labels (e.g., 'example..com')"
         if len(label) > 63:
-            return False, f"Label '{label}' in '{domain}' is too long (max 63 characters)"
+            return False, (f"Label '{label}' in '{domain}' is too long"
+                           f"(max 63 characters)")
         # Valid characters: a-z, 0-9, hyphen (not at start/end)
         if not all(c.isalnum() or c == '-' for c in label):
             return False, f"Label '{label}' contains invalid characters"
@@ -138,7 +142,8 @@ def _validate_domain(domain: str) -> tuple[bool, str]:
 
     # TLD must be at least 2 characters
     if len(labels[-1]) < 2:
-        return False, f"'{domain}' has invalid TLD (must be at least 2 characters)"
+        return False, (f"'{domain}' has invalid TLD"
+                       f" (must be at least 2 characters)")
 
     return True, ""
 
@@ -166,7 +171,8 @@ async def cmd_xmpp(bot, sender_jid, nick, args, msg, is_room):
     if handled:
         return
 
-    bot.reply(msg, "Usage: {prefix}xmpp <on|off|status>".format(prefix=config.get("prefix", "")))
+    bot.reply(msg, "Usage: {prefix}xmpp <on|off|"
+                   "status>".format(prefix=config.get("prefix", "")))
     return
 
 
@@ -215,7 +221,8 @@ async def cmd_xmpp_version(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if "@" in args[0]:
-        bot.reply(msg, f"Note: 'version' only works with domains. Using '{target}' from '{args[0]}'.")
+        bot.reply(msg, f"Note: 'version' only works with domains."
+                       f" Using '{target}' from '{args[0]}'.")
 
     try:
         result = await bot.plugin["xep_0092"].get_version(jid=target,
@@ -223,10 +230,16 @@ async def cmd_xmpp_version(bot, sender_jid, nick, args, msg, is_room):
         name, version, os_info = None, None, None
         if hasattr(result, 'xml'):
             for child in result.xml:
-                tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                if '}' in child.tag:
+                    tag = child.tag.split('}')[-1]
+                else:
+                    tag = child.tag
                 if tag == 'query':
                     for elem in child:
-                        elem_tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+                        if '}' in elem.tag:
+                            elem_tag = elem.tag.split('}')[-1]
+                        else:
+                            elem_tag = elem.tag
                         if elem_tag == 'name':
                             name = elem.text
                         elif elem_tag == 'version':
@@ -239,14 +252,16 @@ async def cmd_xmpp_version(bot, sender_jid, nick, args, msg, is_room):
                 version_info += f" on {os_info}"
             bot.reply(msg, f"ℹ️ Version for {target}: {version_info}")
         else:
-            bot.reply(msg, f"ℹ️ {target} does not provide version information via XEP-0092")
+            bot.reply(msg, f"ℹ️ {target} does not provide version"
+                           f" information via XEP-0092")
     except slixmpp.exceptions.IqTimeout:
         bot.reply(msg, f"🔴 Version request to {target} timed out.")
     except slixmpp.exceptions.IqError as e:
         err = e.iq['error']
         err_condition = err.get('condition', 'unknown')
         if err_condition == "service-unavailable":
-            bot.reply(msg, f"🔴 {target} does not support version requests (XEP-0092).")
+            bot.reply(msg, f"🔴 {target} does not support version"
+                           f" requests (XEP-0092).")
         else:
             bot.reply(msg, f"🔴 Version request failed: {err_condition}")
     except Exception as e:
@@ -281,7 +296,8 @@ async def cmd_xmpp_uptime(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if "@" in args[0]:
-        bot.reply(msg, f"Note: 'uptime' only works with domains. Using '{target}' from '{args[0]}'.")
+        bot.reply(msg, f"Note: 'uptime' only works with domains."
+                       f" Using '{target}' from '{args[0]}'.")
 
     try:
         result = await bot.plugin["xep_0012"].get_last_activity(jid=target,
@@ -307,7 +323,8 @@ async def cmd_xmpp_uptime(bot, sender_jid, nick, args, msg, is_room):
         err = e.iq['error']
         err_condition = err.get('condition', 'unknown')
         if err_condition == "service-unavailable":
-            bot.reply(msg, f"🔴 {target} does not support uptime requests (XEP-0012).")
+            bot.reply(msg, f"🔴 {target} does not support uptime"
+                           " requests (XEP-0012).")
         else:
             bot.reply(msg, f"🔴 Uptime request failed: {err_condition}")
     except Exception as e:
@@ -357,7 +374,8 @@ async def cmd_xmpp_items(bot, sender_jid, nick, args, msg, is_room):
         err = e.iq['error']
         err_condition = err.get('condition', 'unknown')
         if err_condition == "service-unavailable":
-            bot.reply(msg, f"🔴 {target} does not support items requests (XEP-0030).")
+            bot.reply(msg, f"🔴 {target} does not support items"
+                           " requests (XEP-0030).")
         else:
             bot.reply(msg, f"🔴 Items request failed: {err_condition}")
     except Exception as e:
@@ -392,7 +410,8 @@ async def cmd_xmpp_contact(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if "@" in args[0]:
-        bot.reply(msg, f"Note: 'contact' only works with domains. Using '{target}' from '{args[0]}'.")
+        bot.reply(msg, "Note: 'contact' only works with domains."
+                       f" Using '{target}' from '{args[0]}'.")
 
     try:
         info = await bot.plugin["xep_0030"].get_info(jid=target, timeout=8)
@@ -406,31 +425,50 @@ async def cmd_xmpp_contact(bot, sender_jid, nick, args, msg, is_room):
                 if not values:
                     continue
                 if 'admin' in field_var.lower():
-                    contact_info['Admin'] = values if isinstance(values, list) else [values]
+                    if isinstance(values, list):
+                        contact_info['Admin'] = values
+                    else:
+                        contact_info['Admin'] = [values]
                 elif 'abuse' in field_var.lower():
-                    contact_info['Abuse'] = values if isinstance(values, list) else [values]
+                    if isinstance(values, list):
+                        contact_info['Abuse'] = values
+                    else:
+                        contact_info['Abuse'] = [values]
                 elif 'security' in field_var.lower():
-                    contact_info['Security'] = values if isinstance(values, list) else [values]
+                    if isinstance(values, list):
+                        contact_info['Security'] = values
+                    else:
+                        contact_info['Security'] = [values]
                 elif 'feedback' in field_var.lower():
-                    contact_info['Feedback'] = values if isinstance(values, list) else [values]
+                    if isinstance(values, list):
+                        contact_info['Feedback'] = values
+                    else:
+                        contact_info['Feedback'] = [values]
                 elif 'support' in field_var.lower():
-                    contact_info['Support'] = values if isinstance(values, list) else [values]
+                    if isinstance(values, list):
+                        contact_info['Support'] = values
+                    else:
+                        contact_info['Support'] = [values]
         if contact_info:
             lines = []
-            for contact_type in ['Admin', 'Abuse', 'Security', 'Feedback', 'Support']:
+            for contact_type in ['Admin', 'Abuse', 'Security',
+                                 'Feedback', 'Support']:
                 if contact_type in contact_info:
                     for addr in contact_info[contact_type]:
                         lines.append(f"  • {contact_type}: {addr}")
-            bot.reply(msg, f"📧 Contact info for {target}:\n" + "\n".join(lines))
+            bot.reply(msg, f"📧 Contact info for {target}:\n"
+                           + "\n".join(lines))
         else:
-            bot.reply(msg, f"ℹ️  {target} does not provide contact information via XEP-0030")
+            bot.reply(msg, f"ℹ️  {target} does not provide contact"
+                           "information via XEP-0030")
     except slixmpp.exceptions.IqTimeout:
         bot.reply(msg, f"🔴 Contact request to {target} timed out.")
     except slixmpp.exceptions.IqError as e:
         err = e.iq['error']
         err_condition = err.get('condition', 'unknown')
         if err_condition == "service-unavailable":
-            bot.reply(msg, f"🔴 {target} does not support contact requests (XEP-0030).")
+            bot.reply(msg, f"🔴 {target} does not support"
+                           " contact requests (XEP-0030).")
         else:
             bot.reply(msg, f"🔴 Contact request failed: {err_condition}")
     except Exception as e:
@@ -479,9 +517,9 @@ async def cmd_xmpp_info(bot, sender_jid, nick, args, msg, is_room):
             features = [f"  • {feature}" for feature in disco_info['features']]
         result = f"🔍 Info for {target}:\n"
         if identities:
-            result += f"\n**Identities:**\n" + "\n".join(identities)
+            result += "\n**Identities:**\n" + "\n".join(identities)
         if features:
-            result += f"\n**Features:**\n" + "\n".join(features[:10])
+            result += "\n**Features:**\n" + "\n".join(features[:10])
             if len(features) > 10:
                 result += f"\n  ... and {len(features) - 10} more"
         if not identities and not features:
@@ -493,7 +531,8 @@ async def cmd_xmpp_info(bot, sender_jid, nick, args, msg, is_room):
         err = e.iq['error']
         err_condition = err.get('condition', 'unknown')
         if err_condition == "service-unavailable":
-            bot.reply(msg, f"🔴 {target} does not support info requests (XEP-0030).")
+            bot.reply(msg, f"🔴 {target} does not support"
+                           " info requests (XEP-0030).")
         else:
             bot.reply(msg, f"🔴 Info request failed: {err_condition}")
     except Exception as e:
@@ -578,13 +617,15 @@ async def cmd_xmpp_srv(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if "@" in args[0]:
-        bot.reply(msg, f"Note: 'srv' only works with domains. Using '{domain}' from '{args[0]}'.")
+        bot.reply(msg, f"Note: 'srv' only works with domains."
+                       f" Using '{domain}' from '{args[0]}'.")
 
     try:
         import dns.resolver
         import dns.exception
     except ImportError:
-        bot.reply(msg, "🔴 DNS library not installed. Install python-dnspython: pip install dnspython")
+        bot.reply(msg, "🔴 DNS library not installed. Install"
+                       " python-dnspython: pip install dnspython")
         return
 
     try:
@@ -688,12 +729,16 @@ async def cmd_xmpp_compliance(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if "@" in args[0]:
-        bot.reply(msg, f"Note: 'compliance' only works with domains. Using '{domain}' from '{args[0]}'.")
+        bot.reply(msg, "Note: 'compliance' only works with domains. Using"
+                       f"'{domain}' from '{args[0]}'.")
 
     try:
         async with aiohttp.ClientSession() as session:
             url = f"https://compliance.conversations.im/server/{domain}/"
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            async with (
+                    session.get(url,
+                                timeout=aiohttp.ClientTimeout(total=8))
+                    as resp):
                 if resp.status == 200:
                     from bs4 import BeautifulSoup
                     html = await resp.text()
@@ -701,16 +746,21 @@ async def cmd_xmpp_compliance(bot, sender_jid, nick, args, msg, is_room):
                     score_elem = soup.find(class_='stat_result')
                     if score_elem:
                         score = score_elem.get_text(strip=True)
-                        result_url = f"https://compliance.conversations.im/server/{domain}/"
-                        bot.reply(msg, f"✅ Compliance score for {domain}: **{score}**\nDetails: {result_url}")
+                        result_url = (f"https://compliance.conversations.im"
+                                      f"/server/{domain}/")
+                        bot.reply(msg, f"✅ Compliance score for {domain}:"
+                                       f" **{score}**\nDetails: {result_url}")
                     else:
-                        bot.reply(msg, f"🔴 Could not extract compliance score for {domain}")
+                        bot.reply(msg, "🔴 Could not extract compliance"
+                                       f" score for {domain}")
                 elif resp.status == 404:
-                    bot.reply(msg, f"🔴 Server '{domain}' not found in compliance database")
+                    bot.reply(msg, f"🔴 Server '{domain}' not found"
+                                   " in compliance database")
                 else:
-                    bot.reply(msg, f"🔴 Compliance database returned status {resp.status}")
+                    bot.reply(msg, "🔴 Compliance database returned"
+                                   f"status {resp.status}")
     except asyncio.TimeoutError:
-        bot.reply(msg, f"🔴 Compliance request timed out.")
+        bot.reply(msg, "🔴 Compliance request timed out.")
     except aiohttp.ClientError as e:
         bot.reply(msg, f"🔴 Network error: {e}")
     except Exception as e:

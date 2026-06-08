@@ -21,9 +21,9 @@ import random
 from utils.command import command, Role
 from utils.config import config
 from plugins._core import (
-        _is_muc_pm,
-        handle_room_toggle_command,
-        _get_enabled_rooms,
+    _is_muc_pm,
+    handle_room_toggle_command,
+    _get_enabled_rooms,
 )
 
 DICE_KEY = "DICE"
@@ -38,6 +38,39 @@ DICE_RE = re.compile(
     r"^\s*(?:(\d+)?[dD](\d+))\s*([+-]\d+)?\s*"
     r"(<=|>=|<|>)?\s*(\d+)?\s*$"
 )
+
+
+async def make_roll(bot, msg, expr) -> list | None:
+    m = DICE_RE.match(expr)
+    if not m:
+        bot.reply(
+            msg,
+            f"🟡️ Invalid syntax. Example: {config.get('prefix', ',')}dice "
+            "3d20 -5 >= 30"
+        )
+        return None
+
+    num, sides, mod, op, target = m.groups()
+    num = int(num) if num else 1
+    sides = int(sides)
+    if num < 1 or num > 10 or sides < 2 or sides > 100:
+        bot.reply(
+            msg,
+            "🟡️ Dice number must be 1-10 and sides 2-100."
+        )
+        return None
+
+    rolls = [random.randint(1, sides) for _ in range(num)]
+    mod_val = int(mod) if mod else 0
+    if mod_val >= 1000 or mod_val <= -1000:
+        bot.reply(
+            msg,
+            "🟡️ Modifier must be between -999 and 999."
+        )
+        return None
+    total = sum(rolls) + mod_val
+
+    return [num, sides, rolls, mod_val, total, op, target]
 
 
 @command("dice", role=Role.USER, aliases=["roll", "r"])
@@ -88,42 +121,18 @@ async def dice_command(bot, sender_jid, nick, args, msg, is_room):
         return
 
     expr = " ".join(args)
-    m = DICE_RE.match(expr)
-    if not m:
-        bot.reply(
-            msg,
-            f"🟡️ Invalid syntax. Example: {config.get('prefix', ',')}dice "
-            "3d20 -5 >= 30"
-        )
+    result = await make_roll(bot, msg, expr)
+    if result is None:
         return
 
-    num, sides, mod, op, target = m.groups()
-    num = int(num) if num else 1
-    sides = int(sides)
-    if num < 1 or num > 10 or sides < 2 or sides > 100:
-        bot.reply(
-            msg,
-            "🟡️ Dice number must be 1-10 and sides 2-100."
-        )
-        return
-
-    rolls = [random.randint(1, sides) for _ in range(num)]
-    mod_val = int(mod) if mod else 0
-    if mod_val >= 1000 or mod_val <= -1000:
-        bot.reply(
-            msg,
-            "🟡️ Modifier must be between -999 and 999."
-        )
-        return
-    total = sum(rolls) + mod_val
-
-    mod_str = f" {mod_val:+d}" if mod else ""
+    num, sides, rolls, mod, total, op, target = result
+    mod_str = f" {mod:+d}" if mod else ""
     result_str = f"[{', '.join(str(r) for r in rolls)}]{mod_str} = {total}"
 
     if op and target:
         target = int(target)
-        min_result = num * 1 + mod_val
-        max_result = num * sides + mod_val
+        min_result = num + mod
+        max_result = num * sides + mod
         if ((op in (">=", ">") and max_result < target) or
                 (op in ("<=", "<") and min_result > target)):
             bot.reply(

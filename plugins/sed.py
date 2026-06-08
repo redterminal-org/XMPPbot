@@ -273,6 +273,76 @@ def _regex_worker(result_queue, original_text, pattern, replacement,
         result_queue.put(("error", str(exc), 0))
 
 
+def _validate_sed_inputs(original_text: str, pattern: str, replacement: str,
+                         flags_str: str):
+    if len(original_text) > MAX_INPUT_LENGTH:
+        original_text = original_text[:MAX_INPUT_LENGTH]
+
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        return None, None, None, None, (None, 0)
+
+    if len(replacement) > MAX_REPLACEMENT_LENGTH:
+        return None, None, None, None, (None, 0)
+
+    valid_flags = {"i", "m", "s", "g", "l"}
+    for flag in flags_str.lower():
+        if flag not in valid_flags:
+            return None, None, None, None, (None, 0)
+
+    return original_text, pattern, replacement, flags_str, None
+
+
+def _run_sed_worker(original_text: str, pattern: str, replacement: str,
+                    flags_str: str):
+    ctx = multiprocessing.get_context("fork")
+    result_queue = ctx.Queue(maxsize=1)
+
+    process = ctx.Process(
+        target=_regex_worker,
+        args=(
+            result_queue,
+            original_text,
+            pattern,
+            replacement,
+            flags_str,
+        ),
+    )
+
+    process.start()
+    process.join(REGEX_TIMEOUT)
+
+    if process.is_alive():
+        process.terminate()
+        process.join(0.2)
+
+        if process.is_alive():
+            process.kill()
+            process.join(0.2)
+
+        return None, -1, pattern
+
+    return result_queue, 0, pattern
+
+
+def _collect_sed_result(result_queue, pattern: str):
+    try:
+        status, value, num_replacements = result_queue.get_nowait()
+    except queue.Empty:
+        return None, 0
+
+    if status == "ok":
+        if len(value) > MAX_OUTPUT_LENGTH:
+            value = value[:MAX_OUTPUT_LENGTH] + "…"
+        return value, num_replacements
+
+    if status == "regex_error":
+        log.debug("[SED] Regex error for pattern=%r: %s", pattern, value)
+        return None, 0
+
+    log.warning("[SED] Regex worker error for pattern=%r: %s", pattern, value)
+    return None, 0
+
+
 def apply_sed(original_text: str, pattern: str, replacement: str,
               flags_str: str):
     """Apply sed substitution with hard timeout protection.
@@ -283,67 +353,22 @@ def apply_sed(original_text: str, pattern: str, replacement: str,
         (None, 0) on regex/validation error
     """
     try:
-        if len(original_text) > MAX_INPUT_LENGTH:
-            original_text = original_text[:MAX_INPUT_LENGTH]
-
-        if len(pattern) > MAX_PATTERN_LENGTH:
-            return None, 0
-
-        if len(replacement) > MAX_REPLACEMENT_LENGTH:
-            return None, 0
-
-        valid_flags = {"i", "m", "s", "g", "l"}
-
-        for flag in flags_str.lower():
-            if flag not in valid_flags:
-                return None, 0
-
-        ctx = multiprocessing.get_context("fork")
-        result_queue = ctx.Queue(maxsize=1)
-
-        process = ctx.Process(
-            target=_regex_worker,
-            args=(
-                result_queue,
-                original_text,
-                pattern,
-                replacement,
-                flags_str,
-            ),
+        original_text, pattern, replacement, flags_str, early_return = (
+            _validate_sed_inputs(original_text, pattern, replacement,
+                                 flags_str)
         )
+        if early_return is not None:
+            return early_return
 
-        process.start()
-        process.join(REGEX_TIMEOUT)
-
-        if process.is_alive():
-            process.terminate()
-            process.join(0.2)
-
-            if process.is_alive():
-                process.kill()
-                process.join(0.2)
-
+        result_queue, timeout_code, pattern = _run_sed_worker(
+            original_text, pattern, replacement, flags_str
+        )
+        if timeout_code == -1:
             log.warning("[SED] Regex timeout - possible ReDoS pattern=%r",
                         pattern)
             return None, -1
 
-        try:
-            status, value, num_replacements = result_queue.get_nowait()
-        except queue.Empty:
-            return None, 0
-
-        if status == "ok":
-            if len(value) > MAX_OUTPUT_LENGTH:
-                value = value[:MAX_OUTPUT_LENGTH] + "…"
-            return value, num_replacements
-
-        if status == "regex_error":
-            log.debug("[SED] Regex error for pattern=%r: %s", pattern, value)
-            return None, 0
-
-        log.warning("[SED] Regex worker error for pattern=%r: %s", pattern,
-                    value)
-        return None, 0
+        return _collect_sed_result(result_queue, pattern)
 
     except Exception as exc:
         log.exception("[SED] Unexpected error in apply_sed: %s", exc)
@@ -431,7 +456,8 @@ async def process_sed_correction(
         _sed_reply(
             bot,
             msg,
-            f"❌ Regex error or invalid sed expression. Check your pattern: {pattern}",
+            f"❌ Regex error or invalid sed expression. Check your pattern: {
+                pattern}",
             is_room,
         )
         return

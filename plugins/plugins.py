@@ -159,7 +159,8 @@ async def plugin_reload(bot, sender_jid, nick, args, msg, is_room):
 
     if target == "all":
         # Reload all plugins
-        plugins_to_reload = [p for p in bot.bot_plugins.list() if p != "plugins"]
+        plugins_to_reload = [
+            p for p in bot.bot_plugins.list() if p != "plugins"]
 
         errors = []
         successful = []
@@ -184,11 +185,15 @@ async def plugin_reload(bot, sender_jid, nick, args, msg, is_room):
         if errors:
             error_text = "\n".join(errors)
             if auto:
-                bot.reply(msg, f"⚠️ All plugins reloaded with some errors:\n{error_text}")
+                bot.reply(
+                    msg,
+                    f"⚠️ All plugins reloaded with some errors:\n{error_text}")
             else:
-                bot.reply(msg, f"⚠️ All plugins reloaded with errors:\n{error_text}")
+                bot.reply(
+                    msg, f"⚠️ All plugins reloaded with errors:\n{error_text}")
         else:
-            bot.reply(msg, f"✅ All {len(successful)} plugins reloaded successfully.")
+            bot.reply(msg, f"✅ All {len(successful)
+                                    } plugins reloaded successfully.")
         return
 
     success, message = await bot.bot_plugins.reload(target, auto=auto)

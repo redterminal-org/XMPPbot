@@ -79,8 +79,10 @@ except (TypeError, ValueError):
 
 ACTIVE_DUCKS = {}              # room_jid -> timestamp
 PENDING_DUCKS = set()          # room_jid waiting for delayed spawn
-MESSAGE_COUNTS = defaultdict(int)   # room_jid -> message counter, -1 means duck scheduled
-NEXT_DUCK_THRESHOLDS = {}      # room_jid -> random threshold before spawn rolls begin
+# room_jid -> message counter, -1 means duck scheduled
+MESSAGE_COUNTS = defaultdict(int)
+# room_jid -> random threshold before spawn rolls begin
+NEXT_DUCK_THRESHOLDS = {}
 SPAWN_TASKS = {}               # room_jid -> asyncio.Task
 EXPIRE_TASKS = {}              # room_jid -> asyncio.Task
 
@@ -329,7 +331,8 @@ async def _get_top(bot, stat_key, limit=10):
     for _, room_data in room_index.items():
         for user_jid, data in room_data.items():
             disp_name = data.get("display_name", user_jid)
-            disp_name = disp_name[:-1] + '\uFEFF' + disp_name[-1] if len(disp_name) > 1 else disp_name
+            disp_name = disp_name[:-1] + '\uFEFF' + \
+                disp_name[-1] if len(disp_name) > 1 else disp_name
             entry = combined.setdefault(user_jid, {
                 "display_name": data.get("display_name", user_jid),
                 "count": 0,
@@ -437,7 +440,8 @@ async def _spawn_duck_after_delay(bot, room_jid, delay):
             old_expire.cancel()
 
         if DUCK_TIMEOUT > 0:
-            EXPIRE_TASKS[room_jid] = asyncio.create_task(_expire_duck(bot, room_jid))
+            EXPIRE_TASKS[room_jid] = asyncio.create_task(
+                _expire_duck(bot, room_jid))
 
         bot.reply(
             {
@@ -567,64 +571,7 @@ async def _handle_duck_action(bot, msg, action):
              verb, room_jid)
 
 
-@command("duck", role=Role.USER)
-async def duck_command(bot, sender_jid, nick, args, msg, is_room):
-    handled = await handle_room_toggle_command(
-        bot,
-        msg,
-        is_room,
-        args,
-        store_getter=get_ducks_store,
-        key=DUCKS_KEY,
-        label="Duck game",
-        storage="dict",
-        log_prefix="[DUCKS]",
-    )
-    if handled:
-        room_jid = msg["from"].bare
-        if _is_muc_pm(msg) and args and args[0].lower() == "off":
-            ACTIVE_DUCKS.pop(room_jid, None)
-            PENDING_DUCKS.discard(room_jid)
-            await _reset_room_cycle(bot, room_jid)
-
-            spawn_task = SPAWN_TASKS.pop(room_jid, None)
-            if spawn_task:
-                spawn_task.cancel()
-
-            expire_task = EXPIRE_TASKS.pop(room_jid, None)
-            if expire_task:
-                expire_task.cancel()
-        return
-
-    is_muc_pm = _is_muc_pm(msg)
-    is_public_room = _is_public_muc(msg, is_room)
-
-    if not is_public_room:
-        if is_muc_pm and args:
-            _duck_reply(
-                bot,
-                msg,
-                "ℹ️ Use 'duck on/off/status' here, but duck gameplay only works in the public room.",
-            )
-        return
-
-    room_jid = msg["from"].bare
-    if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", room_jid):
-        return
-
-    if not args:
-        _duck_reply(
-            bot,
-            msg,
-            (
-                f"🦆 Usage: {config.get('prefix', ',')}duck "
-                "befriend|trap|friends|top|enemies|stats [jid|nickname]"
-            ),
-        )
-        return
-
-    sub = args[0].lower()
-
+async def _subcommand(bot, msg, sub, args, room_jid):
     if sub == "befriend":
         await _handle_duck_action(bot, msg, "befriended")
         return
@@ -662,13 +609,14 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
         current_trap = int(room_stats.get("trapped", 0))
         safe_name = stats.get("display_name") or "That user"
 
-        disp_name = safe_name[:-1] + '\uFEFF' + safe_name[-1] if len(safe_name) > 1 else safe_name
+        disp_name = safe_name[:-1] + '\uFEFF' + \
+            safe_name[-1] if len(safe_name) > 1 else safe_name
 
         message = (
-                f"📊 {disp_name} has befriended "
-                f"{int(stats.get('befriended', 0))} "
-                f" and trapped {int(stats.get('trapped', 0))} ducks "
-                f"({current_bef}/{current_trap} in {room_jid})"
+            f"📊 {disp_name} has befriended "
+            f"{int(stats.get('befriended', 0))} "
+            f" and trapped {int(stats.get('trapped', 0))} ducks "
+            f"({current_bef}/{current_trap} in {room_jid})"
         )
 
         _duck_reply(
@@ -681,11 +629,74 @@ async def duck_command(bot, sender_jid, nick, args, msg, is_room):
     _duck_reply(bot, msg, "❌ Unknown duck subcommand.")
 
 
+@command("duck", role=Role.USER)
+async def duck_command(bot, sender_jid, nick, args, msg, is_room):
+    handled = await handle_room_toggle_command(
+        bot,
+        msg,
+        is_room,
+        args,
+        store_getter=get_ducks_store,
+        key=DUCKS_KEY,
+        label="Duck game",
+        storage="dict",
+        log_prefix="[DUCKS]",
+    )
+    if handled:
+        room_jid = msg["from"].bare
+        if _is_muc_pm(msg) and args and args[0].lower() == "off":
+            ACTIVE_DUCKS.pop(room_jid, None)
+            PENDING_DUCKS.discard(room_jid)
+            await _reset_room_cycle(bot, room_jid)
+
+            spawn_task = SPAWN_TASKS.pop(room_jid, None)
+            if spawn_task:
+                spawn_task.cancel()
+
+            expire_task = EXPIRE_TASKS.pop(room_jid, None)
+            if expire_task:
+                expire_task.cancel()
+        return
+
+    is_muc_pm = _is_muc_pm(msg)
+    is_public_room = _is_public_muc(msg, is_room)
+
+    if not is_public_room:
+        if is_muc_pm and args:
+            _duck_reply(
+                bot,
+                msg,
+                "ℹ️ Use 'duck on/off/status' here, but duck gameplay only"
+                " works in the public room.",
+            )
+        return
+
+    room_jid = msg["from"].bare
+    if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", room_jid):
+        return
+
+    if not args:
+        _duck_reply(
+            bot,
+            msg,
+            (
+                f"🦆 Usage: {config.get('prefix', ',')}duck "
+                "befriend|trap|friends|top|enemies|stats [jid|nickname]"
+            ),
+        )
+        return
+
+    sub = args[0].lower()
+
+    await _subcommand(bot, msg, sub, args, room_jid)
+
+
 @command("bef", role=Role.USER)
 async def bef_command(bot, sender_jid, nick, args, msg, is_room):
     if not _is_public_muc(msg, is_room):
         return
-    if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", msg["from"].bare):
+    if not await _is_enabled_for_room(bot, DUCKS_KEY,
+                                      "ducks", msg["from"].bare):
         return
     await _handle_duck_action(bot, msg, "befriended")
 
@@ -694,7 +705,8 @@ async def bef_command(bot, sender_jid, nick, args, msg, is_room):
 async def trap_command(bot, sender_jid, nick, args, msg, is_room):
     if not _is_public_muc(msg, is_room):
         return
-    if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", msg["from"].bare):
+    if not await _is_enabled_for_room(bot, DUCKS_KEY,
+                                      "ducks", msg["from"].bare):
         return
     await _handle_duck_action(bot, msg, "trapped")
 
@@ -703,7 +715,8 @@ async def trap_command(bot, sender_jid, nick, args, msg, is_room):
 async def duckstats_command(bot, sender_jid, nick, args, msg, is_room):
     if not _is_public_muc(msg, is_room):
         return
-    if not await _is_enabled_for_room(bot, DUCKS_KEY, "ducks", msg["from"].bare):
+    if not await _is_enabled_for_room(bot, DUCKS_KEY,
+                                      "ducks", msg["from"].bare):
         return
     await duck_command(bot, sender_jid, nick, ["stats", *args], msg, is_room)
 
@@ -757,7 +770,9 @@ async def on_unload(bot):
         try:
             await _save_room_cycle(bot, room_jid)
         except Exception:
-            log.exception("[DUCKS] Failed to save duck cycle for %s during unload", room_jid)
+            log.exception(
+                "[DUCKS] Failed to save duck cycle for %s during unload",
+                room_jid)
 
     for task in list(SPAWN_TASKS.values()):
         task.cancel()

@@ -34,19 +34,24 @@ from typing import Any
 from utils.command import command, Role
 from utils.config import config
 from plugins._core import (
-    get_profile,
     handle_room_toggle_command,
     JOINED_ROOMS,
     _ensure_user_exists,
     _is_enabled_for_room,
 )
+# --------------------------------------------------------------------------
+# !!!Switched from plugins._core.get_profile to plugins.vcard.get_user_vcard
+# due to circular import!!!
+# --------------------------------------------------------------------------
+from plugins.vcard import get_user_vcard as get_profile
 
 log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "birthday_notify",
     "version": "1.1.1",
-    "description": "Automatic birthday notifications in rooms (opt-in per room)",
+    "description":
+        "Automatic birthday notifications in rooms (opt-in per room)",
     "category": "fun",
     "requires": ["rooms", "_core"],
 }
@@ -201,7 +206,8 @@ async def _store_get(store, jid: str, key: str, default=None):
         return default if value is None else value
 
 
-async def _load_announced_date(bot, room_jid: str, user_jid: str) -> str | None:
+async def _load_announced_date(bot, room_jid: str,
+                               user_jid: str) -> str | None:
     """Load persisted announcement date for this room/user pair."""
     store = bot.db.users.plugin("birthday_notify")
     room_jid = str(room_jid)
@@ -295,7 +301,8 @@ async def _get_cached_bday(bot, user_jid: str):
     return value, updated_at
 
 
-async def _set_cached_bday(bot, user_jid: str, birthday, nick: str | None = None):
+async def _set_cached_bday(bot, user_jid: str, birthday,
+                           nick: str | None = None):
     """Store BDAY lookup result in this plugin's DB cache.
 
     This stores positive results and explicit negative results. It should
@@ -341,7 +348,7 @@ async def _get_birthday_from_vcard(bot, room_jid, nick: str):
 
     except Exception as exc:
         log.debug(
-            "[BIRTHDAY] Could not fetch BDAY from vCard for nick %s in room %s: %s",
+            "[BIRTHDAY] Couldn't fetch BDAY from vCard for %s in room %s: %s",
             nick,
             room_jid,
             exc,
@@ -349,7 +356,8 @@ async def _get_birthday_from_vcard(bot, room_jid, nick: str):
         return False, None
 
 
-async def _get_birthday_cached_or_live(bot, room_jid, user_jid: str, nick: str):
+async def _get_birthday_cached_or_live(bot, room_jid,
+                                       user_jid: str, nick: str):
     """Get BDAY from birthday_notify cache first, then live vCard if needed.
 
     Behavior:
@@ -391,7 +399,8 @@ async def _get_birthday_cached_or_live(bot, room_jid, user_jid: str, nick: str):
 
     if cached_bday:
         log.debug(
-            "[BIRTHDAY] Using stale cached BDAY for %s because live lookup failed",
+            "[BIRTHDAY] Using stale cached BDAY for %s because live lookup"
+            " failed",
             user_jid,
         )
 
@@ -438,7 +447,8 @@ async def _check_user_birthday(bot, user_jid_str: str, nick: str, room_jid):
         age = _calculate_age(birthday)
 
         if age is not None:
-            msg_text = f"🎉 Happy Birthday {nick}! You're turning {age} today! 🎂"
+            msg_text = f"🎉 Happy Birthday {
+                nick}! You're turning {age} today! 🎂"
         else:
             msg_text = f"🎉 Happy Birthday {nick}! 🎂"
 
@@ -524,7 +534,10 @@ async def _check_and_announce_birthdays(bot):
         log.exception("[BIRTHDAY] Error in birthday check: %s", exc)
 
 
-async def _birthday_check_loop(bot, check_interval: int = CHECK_LOOP_INTERVAL_SECONDS):
+async def _birthday_check_loop(
+    bot,
+    check_interval: int = CHECK_LOOP_INTERVAL_SECONDS
+):
     """Periodic task that checks for birthdays.
 
     The first full scan is delayed so the bot can finish startup quickly. After

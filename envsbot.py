@@ -118,7 +118,9 @@ class Bot(slixmpp.ClientXMPP):
                     mtype="groupchat"
                 )
                 await self._safe_send_message(message)
-                log.info("[ADMIN] Bot restart notification sent to room %s", notif["room"])
+                log.info(
+                    "[ADMIN] Bot restart notification sent to room %s",
+                    notif["room"])
             else:
                 # Send private message
                 message = self.make_message(
@@ -127,7 +129,9 @@ class Bot(slixmpp.ClientXMPP):
                     mtype="chat"
                 )
                 await self._safe_send_message(message)
-                log.info("[ADMIN] Bot restart notification sent to %s", notif["sender"])
+                log.info(
+                    "[ADMIN] Bot restart notification sent to %s",
+                    notif["sender"])
         except FileNotFoundError:
             pass  # Expected if no restart notification
         except Exception as e:
@@ -148,7 +152,8 @@ class Bot(slixmpp.ClientXMPP):
             # Check if send() is a coroutine (async)
             if inspect.iscoroutine(result):
                 await result
-            # log.info("[BOT] Message sent to %s: %s", message['to'], message['body'])
+            # log.info("[BOT] Message sent to %s: %s", message['to'],
+            # message['body'])
         except Exception as e:
             log.exception("[BOT] Failed to send message: %s", e)
 
@@ -264,7 +269,8 @@ class Bot(slixmpp.ClientXMPP):
                                     and db_role > Role.MODERATOR):
                                 return Role.MODERATOR
                     except Exception as e:
-                        log.debug("[BOT] Error checking room affiliation: %s", e)
+                        log.debug(
+                            "[BOT] Error checking room affiliation: %s", e)
         return db_role
 
     def reply(self, msg, text, mention=True, thread=True, rate_limit=True,
@@ -325,7 +331,8 @@ class Bot(slixmpp.ClientXMPP):
                 asyncio.create_task(self._reply_send_wrapper(message))
 
                 # log message
-                # log.info(f"[BOT] Replying in room {msg['from'].bare} to {msg.get('mucnick')}: {text}")
+                # log.info(f"[BOT] Replying in room {msg['from'].bare} to
+                # {msg.get('mucnick')}: {text}")
 
                 # support test MockMessage
                 if hasattr(msg, "replies"):
@@ -514,7 +521,8 @@ class Bot(slixmpp.ClientXMPP):
             if inspect.isawaitable(result):
                 await result
         except Exception as e:
-            log.exception(f"[BOT]🔴  Error while executing command '{cmd_name}'")
+            log.exception(
+                f"[BOT]🔴  Error while executing command '{cmd_name}'")
             if user_role in (Role.OWNER, Role.ADMIN):
                 err_msg = f"🔴 Command error: {e}"
             else:
@@ -593,9 +601,11 @@ if __name__ == "__main__":
         except Exception as e:
             log.error(f"[INIT] 🔴 Failed to copy {SOURCE} to {TARGET}: {e}")
     elif not os.path.exists(SOURCE):
-        log.warning(f"[INIT] 🔴 Source file {SOURCE} not found. Skipping copy.")
+        log.warning(f"[INIT] 🔴 Source file {SOURCE} not found."
+                    "Skipping copy.")
     else:
-        log.info(f"[INIT] ✅ Target file {TARGET} already exists. Skipping copy.")
+        log.info(f"[INIT] ✅ Target file {
+                 TARGET} already exists. Skipping copy.")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

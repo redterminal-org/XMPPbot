@@ -76,7 +76,8 @@ class Rooms:
     async def get(self, room_jid):
 
         cursor = await self.conn.execute(
-            "SELECT room_jid, nick, autojoin, status FROM rooms WHERE room_jid=?",
+            "SELECT room_jid, nick, autojoin, status FROM rooms WHERE"
+            " room_jid=?",
             (room_jid,)
         )
 

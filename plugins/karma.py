@@ -146,7 +146,8 @@ def _left_boundary_ok(text: str, start: int) -> bool:
     return prev.isspace() or prev in "([{'\"“”„‚<>|/,:;*"
 
 
-def _match_known_nick_before_operator(text: str, op_start: int, room_jid: str) -> str | None:
+def _match_known_nick_before_operator(text: str, op_start: int,
+                                      room_jid: str) -> str | None:
     prefix = text[:op_start].rstrip()
     if not prefix:
         return None
@@ -244,12 +245,14 @@ async def karma_command(bot, sender_jid, nick, args, msg, is_room):
             _karma_reply(
                 bot,
                 msg,
-                "ℹ️ Use 'karma on/off/status' here. Karma queries work in the public room.",
+                "ℹ️ Use 'karma on/off/status' here. Karma queries work in the"
+                " public room.",
             )
         return
 
     room_jid = msg["from"].bare
-    if not await _is_enabled_for_room(bot, KARMA_ENABLED_KEY, "karma", room_jid):
+    if not await _is_enabled_for_room(bot, KARMA_ENABLED_KEY,
+                                      "karma", room_jid):
         return
 
     if not args:
@@ -268,7 +271,8 @@ async def karma_command(bot, sender_jid, nick, args, msg, is_room):
             scores.items(),
             key=lambda item: (-int(item[1]), item[0].lower())
         )[:10]
-        _karma_reply(bot, msg, f"🏆 Karma top for this room: {_format_ranking(entries)}")
+        _karma_reply(bot, msg, f"🏆 Karma top for this room: {
+                     _format_ranking(entries)}")
         return
 
     if len(args) == 1 and args[0].lower() == "bottom":
@@ -277,20 +281,23 @@ async def karma_command(bot, sender_jid, nick, args, msg, is_room):
             scores.items(),
             key=lambda item: (int(item[1]), item[0].lower())
         )[:10]
-        _karma_reply(bot, msg, f"💀 Karma bottom for this room: {_format_ranking(entries)}")
+        _karma_reply(bot, msg, f"💀 Karma bottom for this room: {
+                     _format_ranking(entries)}")
         return
 
     target = _canonical_nick(room_jid, sub)
     known_targets = {n.lower() for n in _known_room_nicks(room_jid)}
     if target.lower() not in known_targets:
         sub_name = sub[:1] + '\uFEFF' + sub[1:] if len(sub) > 1 else sub
-        _karma_reply(bot, msg, f"❌ '{sub_name}' is not currently in this room.")
+        _karma_reply(bot, msg, f"❌ '{
+                     sub_name}' is not currently in this room.")
         return
 
     scores = await _get_room_scores(bot, room_jid)
     canonical, score = _normalize_lookup(scores, target)
     display = canonical or target
-    display = display[:-1] + '\uFEFF' + display[-1] if len(display) > 1 else display
+    display = display[:-1] + '\uFEFF' + \
+        display[-1] if len(display) > 1 else display
 
     _karma_reply(bot, msg, f"📊 Karma for {display}: {score}")
 
@@ -327,63 +334,71 @@ async def on_message(bot, msg):
         if not events:
             return
 
-        scores = await _get_room_scores(bot, room_jid)
-        changed = False
-        seen_targets = set()
-        response_lines = []
-        throttle_hit = False
-
-        for raw_target, delta in events:
-            target_nick = _canonical_nick(room_jid, raw_target)
-            target_lower = target_nick.lower()
-
-            if target_lower in seen_targets:
-                continue
-            seen_targets.add(target_lower)
-
-            if target_lower == str(actor_nick).lower():
-                continue
-
-            allowed = await _check_throttle(bot, msg, target_nick)
-            if not allowed:
-                throttle_hit = True
-                continue
-
-            current_key, current_score = _normalize_lookup(scores, target_nick)
-            key = current_key or target_nick
-            scores[key] = int(current_score) + delta
-            changed = True
-
-            await _set_throttle(bot, msg, key)
-
-            sign = "+1" if delta > 0 else "-1"
-            icon = "📈" if delta > 0 else "📉"
-            receiver = key[:-1] + '\uFEFF' + key[-1] if len(key) > 1 else key
-            actor = actor_nick[:-1] + '\uFEFF' + actor_nick[-1] if len(actor_nick) > 1 else actor_nick
-            response_lines.append(
-                f"{icon} {receiver} now has {scores[key]} karma ({sign} from {actor})"
-            )
-
-            log.info(
-                "[KARMA] room=%s actor=%s target=%s delta=%s total=%s",
-                room_jid,
-                actor_nick,
-                key,
-                delta,
-                scores[key],
-            )
-
-        if changed:
-            await _set_room_scores(bot, room_jid, scores)
-
-        if response_lines:
-            _karma_reply(bot, msg, "\n".join(response_lines))
-
-        if throttle_hit and not response_lines:
-            _karma_reply(bot, msg, "⏱️ You recently gave karma to that user. Try again later.")
+        await _handle_score_event(bot, msg, events, actor_nick, room_jid)
 
     except Exception:
         log.exception("[KARMA] Error in on_message")
+
+
+async def _handle_score_event(bot, msg, events, actor_nick, room_jid):
+    scores = await _get_room_scores(bot, room_jid)
+    changed = False
+    seen_targets = set()
+    response_lines = []
+    throttle_hit = False
+
+    for raw_target, delta in events:
+        target_nick = _canonical_nick(room_jid, raw_target)
+        target_lower = target_nick.lower()
+
+        if target_lower in seen_targets:
+            continue
+        seen_targets.add(target_lower)
+
+        if target_lower == str(actor_nick).lower():
+            continue
+
+        allowed = await _check_throttle(bot, msg, target_nick)
+        if not allowed:
+            throttle_hit = True
+            continue
+
+        current_key, current_score = _normalize_lookup(scores, target_nick)
+        key = current_key or target_nick
+        scores[key] = int(current_score) + delta
+        changed = True
+
+        await _set_throttle(bot, msg, key)
+
+        sign = "+1" if delta > 0 else "-1"
+        icon = "📈" if delta > 0 else "📉"
+        receiver = key[:-1] + '\uFEFF' + key[-1] if len(key) > 1 else key
+        actor = actor_nick[:-1] + '\uFEFF' + \
+            actor_nick[-1] if len(actor_nick) > 1 else actor_nick
+        response_lines.append(
+            f"{icon} {receiver} now has {
+                scores[key]} karma ({sign} from {actor})"
+        )
+
+        log.info(
+            "[KARMA] room=%s actor=%s target=%s delta=%s total=%s",
+            room_jid,
+            actor_nick,
+            key,
+            delta,
+            scores[key],
+        )
+
+    if changed:
+        await _set_room_scores(bot, room_jid, scores)
+
+    if response_lines:
+        _karma_reply(bot, msg, "\n".join(response_lines))
+
+    if throttle_hit and not response_lines:
+        _karma_reply(
+            bot, msg, "⏱️ You recently gave karma to that user."
+            " Try again later.")
 
 
 async def on_load(bot):

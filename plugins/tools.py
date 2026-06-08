@@ -42,7 +42,9 @@ TOOLS_KEY = "TOOLS"
 PLUGIN_META = {
     "name": "tools",
     "version": "0.5.0",
-    "description": "Utility commands: ping/pong, message echo, timezone-aware time/date lookups, and Unix timestamp conversion",
+    "description":
+    "Utility commands: ping/pong, message echo, timezone-aware time/date"
+    " lookups, and Unix timestamp conversion",
     "category": "utility",
     "requires": ["_core", "vcard"],
 }
@@ -165,8 +167,12 @@ async def time_command(bot, sender_jid, nick, args, msg, is_room):
     else:
         # Direct messages to bot are vorbidden
         if args:
-            log.info(f"[VCARD] Direct message with args from '{msg['from'].bare}'")
-            bot.reply(msg, "🔴  In direct messages, you can only look up your own vCard. Use the command without args.")
+            log.info(f"[VCARD] Direct message with args from '{
+                     msg['from'].bare}'")
+            bot.reply(
+                msg,
+                "🔴  In direct messages, you can only look up your own vCard."
+                " Use the command without args.")
             return
         target_jid = str(msg["from"].bare)
         display_name = target_jid
@@ -175,8 +181,8 @@ async def time_command(bot, sender_jid, nick, args, msg, is_room):
 
     if not timezone:
         bot.reply(msg, f"🟡️ No TIMEZONE set for {display_name}. Using UTC. "
-                       f"Set with {config.get('prefix', ',')}tz set"
-                       " <timezone>")
+                  f"Set with {config.get('prefix', ',')}tz set"
+                  " <timezone>")
         tzinfo = pytz.UTC
         tzone = "UTC"
     else:
@@ -184,7 +190,8 @@ async def time_command(bot, sender_jid, nick, args, msg, is_room):
             tzinfo = pytz.timezone(timezone)
             tzone = timezone
         except Exception:
-            bot.reply(msg, f"🟡️ Invalid timezone '{timezone}' for {display_name}. Using UTC.")
+            bot.reply(msg, f"🟡️ Invalid timezone '{
+                      timezone}' for {display_name}. Using UTC.")
             tzinfo = pytz.UTC
             tzone = "UTC"
 
@@ -225,15 +232,20 @@ async def date_command(bot, sender_jid, nick, args, msg, is_room):
         else:
             info = nicks.get(nick)
             if not info or not info.get("jid"):
-                bot.reply(msg, "🔴  Could not determine your JID in this room.")
+                bot.reply(msg,
+                          "🔴  Could not determine your JID in this room.")
                 return
             target_jid = str(info["jid"])
             display_name = nick
     else:
         # Direct messages are not allowed
         if args:
-            log.info(f"[VCARD] Direct message with args from '{msg['from'].bare}'")
-            bot.reply(msg, "🔴  In direct messages, you can only look up your own vCard. Use the command without args.")
+            log.info(f"[VCARD] Direct message with args from '{
+                     msg['from'].bare}'")
+            bot.reply(
+                msg,
+                "🔴  In direct messages, you can only look up your own vCard."
+                " Use the command without args.")
             return
         target_jid = str(msg["from"].bare)
         display_name = target_jid
@@ -242,8 +254,8 @@ async def date_command(bot, sender_jid, nick, args, msg, is_room):
 
     if not timezone:
         bot.reply(msg, f"🟡️ No TIMEZONE set for {display_name}. Using UTC. "
-                       f"Set with {config.get('prefix', ',')}tz set"
-                       " <timezone>")
+                  f"Set with {config.get('prefix', ',')}tz set"
+                  " <timezone>")
         tzinfo = pytz.UTC
         tzone = "UTC"
     else:
@@ -251,7 +263,8 @@ async def date_command(bot, sender_jid, nick, args, msg, is_room):
             tzinfo = pytz.timezone(timezone)
             tzone = timezone
         except Exception:
-            bot.reply(msg, f"🟡️ Invalid timezone '{timezone}' for {display_name}. Using UTC.")
+            bot.reply(msg, f"🟡️ Invalid timezone '{
+                      timezone}' for {display_name}. Using UTC.")
             tzinfo = pytz.UTC
             tzone = "UTC"
 
@@ -305,12 +318,16 @@ async def timestamp_command(bot, sender_jid, nick, args, msg, is_room):
     try:
         timestamp = int(args[0])
     except ValueError:
-        bot.reply(msg, f"🔴 Invalid timestamp. Please provide a valid Unix timestamp (integer).")
+        bot.reply(
+            msg,
+            "🔴 Invalid timestamp. Please provide a valid Unix timestamp"
+            " (integer).")
         return
 
     try:
         # Get user's timezone
-        target_jid = JOINED_ROOMS.get(msg["from"].bare, {}).get("nicks", {}).get(nick, {}).get("jid", str(msg["from"].bare))
+        target_jid = JOINED_ROOMS.get(msg["from"].bare, {}).get(
+            "nicks", {}).get(nick, {}).get("jid", str(msg["from"].bare))
         timezone = await _get_user_timezone(bot, target_jid)
 
         if timezone:
@@ -335,6 +352,131 @@ async def timestamp_command(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"🔴 Error converting timestamp: {str(e)}")
 
 
+async def _seen_resolve_room_context(bot, sender_jid, nick, args, msg):
+    msg_from = msg["from"]
+    from_str = str(msg_from)
+    bare_jid = from_str.split("/")[0]
+    has_resource = "/" in from_str
+
+    room_jid = bare_jid
+    joined_room = JOINED_ROOMS[room_jid]
+    nicks_dict = joined_room.get("nicks", {})
+    caller_nick = from_str.split("/", 1)[1] if has_resource else nick
+    display_nick = " ".join(args).strip() if args else caller_nick
+
+    candidate_info = nicks_dict.get(display_nick)
+    if candidate_info and "jid" in candidate_info:
+        target_jid = candidate_info["jid"]
+        present_in_room = True
+    else:
+        candidates = await get_jids_from_nick_index(bot, display_nick)
+        target_jid = candidates[0] if candidates else None
+        present_in_room = False
+
+    caller_info = nicks_dict.get(caller_nick)
+    if caller_info and "jid" in caller_info:
+        caller_jid = caller_info["jid"]
+    else:
+        caller_jids = await get_jids_from_nick_index(bot, caller_nick)
+        caller_jid = caller_jids[0] if caller_jids else None
+
+    rooms_with_nick = []
+    for muc_jid, room_data in JOINED_ROOMS.items():
+        nicks = room_data.get("nicks", {})
+        occupant_info = nicks.get(display_nick)
+        if occupant_info and occupant_info.get("jid"):
+            rooms_with_nick.append(muc_jid)
+
+    target_show = "unknown"
+    target_status = ""
+    target_emoji = ""
+
+    if present_in_room:
+        try:
+            mp = bot.plugin["xep_0045"]
+            occupants = mp.get_roster(room_jid)
+            if display_nick in occupants:
+                target_show = mp.get_jid_property(room_jid, display_nick,
+                                                  "show" or "online")
+                target_status = mp.get_jid_property(room_jid, display_nick,
+                                                    "status") or ""
+                target_emoji = bot.presence.emoji(target_show)
+            else:
+                log.info(
+                    f"[SEEN] Occupant '{display_nick}' not found via"
+                    f" get_occupant in {room_jid}"
+                )
+        except Exception as e:
+            log.warning(f"[SEEN] Could not get presence for '{display_nick}'"
+                        f" in room {room_jid}: {e}")
+
+    return {
+        "room_jid": room_jid,
+        "display_nick": display_nick,
+        "target_jid": target_jid,
+        "caller_jid": caller_jid,
+        "present_in_room": present_in_room,
+        "rooms_with_nick": rooms_with_nick,
+        "target_show": target_show,
+        "target_status": target_status,
+        "target_emoji": target_emoji,
+    }
+
+
+async def _seen_resolve_dm_context(bot, sender_jid, nick, args, msg):
+    if args and " ".join(args).strip() != nick:
+        log.info(f"[SEEN] DM lookup denied: '{nick}' tried to look up"
+                 f" '{args[0]}' in PM.")
+        bot.reply(msg, "🔴 Can only look up yourself in private chats.")
+        return None
+
+    display_nick = nick
+    candidates = await get_jids_from_nick_index(bot, display_nick)
+    target_jid = candidates[0] if candidates else slixmpp.JID(sender_jid).bare
+    caller_jid = target_jid
+
+    return {
+        "display_nick": display_nick,
+        "target_jid": target_jid,
+        "caller_jid": caller_jid,
+        "present_in_room": False,
+        "rooms_with_nick": [],
+        "target_show": "online",
+        "target_status": "",
+        "target_emoji": bot.presence.emoji("online"),
+    }
+
+
+async def _seen_get_timezone(bot, caller_jid):
+    try:
+        return await get_user_tzinfo(bot, caller_jid)
+    except Exception as ex:
+        log.warning(f"[SEEN] Failed to get timezone for {caller_jid}: {ex}")
+        return None
+
+
+async def _seen_format_last_seen(last_seen_utc, timezone, display_nick):
+    if not last_seen_utc:
+        return "never"
+
+    try:
+        dt_utc = datetime.fromisoformat(last_seen_utc)
+        if timezone:
+            try:
+                if not dt_utc.tzinfo:
+                    dt_utc = dt_utc.replace(tzinfo=dt_timezone.utc)
+                dt_local = dt_utc.astimezone(timezone)
+                return dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+            except Exception as e:
+                log.warning("[SEEN] Failed to convert last_seen for "
+                            f"'{display_nick}' to tz {timezone}: {e}")
+                return dt_utc.isoformat()
+        return dt_utc.isoformat()
+    except Exception as e:
+        log.warning(f"[SEEN] Malformed last_seen for '{display_nick}': {e}")
+        return str(last_seen_utc)
+
+
 @command(name="seen", role=Role.USER, aliases=["s"])
 async def seen_command(bot, sender_jid, nick, args, msg, is_room):
     """
@@ -345,148 +487,100 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
     Usage:
         {prefix}seen <nick>
     """
-    present_in_room = False
-    rooms_with_nick = []
-
     enabled_rooms = await _get_enabled_rooms(bot, TOOLS_KEY, "tools")
     if msg["from"].bare not in enabled_rooms and (is_room or _is_muc_pm(msg)):
         bot.reply(msg, "ℹ️ seen is disabled in this room.")
         return
 
     try:
-        joined_rooms = JOINED_ROOMS
-        _nick_index = getattr(bot, "_nick_index", {})    # {nick: [jid1, jid2,...]}
-        msg_from = msg['from']
-        from_str = str(msg_from)
-        has_resource = '/' in from_str
-        bare_jid = from_str.split('/')[0]
+        msg_from = msg["from"]
+        bare_jid = str(msg_from).split("/")[0]
 
-        if bare_jid in joined_rooms:
-            # MUC or MUC PM context
-            room_jid = bare_jid
-            joined_room = joined_rooms[room_jid]
-            nicks_dict = joined_room.get("nicks", {})
-            caller_nick = from_str.split('/', 1)[1] if has_resource else nick
-            display_nick = " ".join(args).strip() if args else caller_nick
+        if bare_jid in JOINED_ROOMS:
+            context = await _seen_resolve_room_context(bot, sender_jid, nick,
+                                                       args, msg)
+        else:
+            context = await _seen_resolve_dm_context(bot, sender_jid, nick,
+                                                     args, msg)
 
-            # 1. Try JOINED_ROOMS first (active occupant in this room)
-            present_in_room = False
-            target_jid = None
-            candidate_info = nicks_dict.get(display_nick)
-            if candidate_info and "jid" in candidate_info:
-                target_jid = candidate_info["jid"]
-                present_in_room = True
-            else:
-                # 2. Fallback: historical JID from _nick_index
-                candidates = await get_jids_from_nick_index(bot, display_nick)
-                if candidates:
-                    target_jid = candidates[0]
+        if not context:
+            return
+
+        display_nick = context["display_nick"]
+        target_jid = context["target_jid"]
+        caller_jid = context["caller_jid"]
+        present_in_room = context["present_in_room"]
+        rooms_with_nick = context["rooms_with_nick"]
+        target_show = context["target_show"]
+        target_status = context["target_status"]
+        target_emoji = context["target_emoji"]
+
+        if not target_jid:
+            if bare_jid in JOINED_ROOMS:
+                room_jid = context["room_jid"]
+                if "/" in str(msg_from):
+                    caller_nick = str(msg_from).split("/", 1)[1]
                 else:
-                    target_jid = None
-                present_in_room = False
-
-            # Get caller realjid (for timezone)
-            caller_info = nicks_dict.get(caller_nick)
-            if caller_info and "jid" in caller_info:
-                caller_jid = caller_info["jid"]
+                    caller_nick = nick
+                log.info(
+                    f"[SEEN] Nick not found in MUC or index: '{display_nick}' "
+                    f"(room={room_jid}) requested by '{caller_nick}'"
+                )
+                bot.reply(msg, f"🔴 Nick '{display_nick}' not found in"
+                               "this room or index.")
             else:
-                caller_jids = await get_jids_from_nick_index(bot, caller_nick)
-                caller_jid = caller_jids[0] if caller_jids else None
-            if not target_jid:
-                log.info(f"[SEEN] Nick not found in MUC or index: '{display_nick}' (room={room_jid}) requested by '{caller_nick}'")
-                bot.reply(msg, f"🔴 Nick '{display_nick}' not found in this room or index.")
-                return
-            if not caller_jid:
-                log.warning(f"[SEEN] Caller nick '{caller_nick}' not found in room index while requesting seen for '{display_nick}' in room {room_jid}.")
+                log.info(f"[SEEN] No data found for nick '{display_nick}'"
+                         f"(jid={target_jid})")
+                bot.reply(msg, f"🔴 No data found for nick '{display_nick}'.")
+            return
+
+        if not caller_jid:
+            room_jid = context.get("room_jid", None)
+            if room_jid:
+                if "/" in str(msg_from):
+                    caller_nick = str(msg_from).split("/", 1)[1]
+                else:
+                    caller_nick = nick
+                log.warning(
+                    f"[SEEN] Caller nick '{caller_nick}' not found in room"
+                    f" index while requesting seen for '{display_nick}' in"
+                    f" room {room_jid}."
+                )
                 bot.reply(msg, "🔴 Could not determine your JID in this room.")
                 return
 
-            rooms_with_nick = []
-
-            for muc_jid, room_data in JOINED_ROOMS.items():
-                nicks = room_data.get("nicks", {})
-                occupant_info = nicks.get(display_nick)
-                if occupant_info and occupant_info.get("jid"):
-                    rooms_with_nick.append(muc_jid)
-
-            # Presence: only if currently in the room
-            target_show = "unknown"
-            target_status = ""
-            target_emoji = ""
-            if present_in_room:
-                try:
-                    muc_plugin = bot.plugin['xep_0045']
-                    occupants = muc_plugin.get_roster(room_jid)
-                    if display_nick in occupants:
-                        target_show = muc_plugin.get_jid_property(room_jid,
-                                                                  display_nick,
-                                                                  'show') or 'online'
-                        target_status = muc_plugin.get_jid_property(room_jid,
-                                                                  display_nick,
-                                                                  'status') or ''
-                        target_emoji = bot.presence.emoji(target_show)
-                    else:
-                        log.info(f"[SEEN] Occupant '{display_nick}' not found via get_occupant in {room_jid}")
-                except Exception as e:
-                    log.warning(f"[SEEN] Could not get presence for '{display_nick}' in room {room_jid}: {e}")
-                    # fallback: unknown
-
-        else:
-            # Not a MUC context → regular DM (or fallback)
-            if args and " ".join(args).strip() != nick:
-                log.info(f"[SEEN] DM lookup denied: '{nick}' tried to look up '{args[0]}' in PM.")
-                bot.reply(msg, "🔴 Can only look up yourself in private chats.")
-                return
-            display_nick = nick
-            candidates = await get_jids_from_nick_index(bot, display_nick)
-            target_jid = candidates[0] if candidates else slixmpp.JID(sender_jid).bare
-            caller_jid = target_jid
-            target_show = "online"
-            target_status = ""
-            target_emoji = bot.presence.emoji(target_show)
-        # Get the user's timezone using their real JID
-        try:
-            timezone = await get_user_tzinfo(bot, caller_jid)
-        except Exception as ex:
-            log.warning(f"[SEEN] Failed to get timezone for {caller_jid}: {ex}")
-            timezone = None
-
-        # Retrieve last_seen from users table
+        timezone = await _seen_get_timezone(bot, caller_jid)
         user = await bot.db.users.get(target_jid)
         if not user:
-            log.info(f"[SEEN] No data found for nick '{display_nick}' (jid={target_jid})")
+            log.info(f"[SEEN] No data found for nick '{display_nick}'"
+                     f"(jid={target_jid})")
             bot.reply(msg, f"🔴 No data found for nick '{display_nick}'.")
             return
 
-        last_seen_utc = user.get("last_seen")
-        last_seen_str = "never"
-        if last_seen_utc:
-            try:
-                dt_utc = datetime.fromisoformat(last_seen_utc)
-                if timezone:
-                    try:
-                        if not dt_utc.tzinfo:
-                            dt_utc = dt_utc.replace(tzinfo=dt_timezone.utc)
-                        dt_local = dt_utc.astimezone(timezone)
-                        last_seen_str = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
-                    except Exception as e:
-                        log.warning(f"[SEEN] Failed to convert last_seen for '{display_nick}' to tz {timezone}: {e}")
-                        last_seen_str = dt_utc.isoformat()
-                else:
-                    last_seen_str = dt_utc.isoformat()
-            except Exception as e:
-                log.warning(f"[SEEN] Malformed last_seen for '{display_nick}': {e}")
-                last_seen_str = str(last_seen_utc)
+        last_seen_str = await _seen_format_last_seen(user.get("last_seen"),
+                                                     timezone, display_nick)
 
         lines = [
             f"👤 Nickname: {display_nick}",
             f"🕒 Last seen: {last_seen_str}",
-            f"-  Status: {target_emoji} {target_show} ({target_status})" if present_in_room and target_show != "unknown" else "-  Status: unknown",
-            f"-  Joined rooms (tracked by bot): {', '.join(rooms_with_nick)}" if rooms_with_nick else "-  Currently not in any tracked rooms"
+            (
+                f"-  Status: {target_emoji} {target_show} ({target_status})"
+                if present_in_room and target_show != "unknown"
+                else "-  Status: unknown"
+            ),
+            (
+                "-  Joined rooms (tracked by bot):"
+                f" {', '.join(rooms_with_nick)}"
+                if rooms_with_nick
+                else "-  Currently not in any tracked rooms"
+            ),
         ]
 
-        log.info(f"[SEEN] Lookup for '{display_nick}': seen='{last_seen_str}' status={target_show} jid={target_jid}")
+        log.info(f"[SEEN] Lookup for '{display_nick}': seen='{last_seen_str}'"
+                 f"status={target_show} jid={target_jid}")
         bot.reply(msg, "\n".join(lines))
+
     except Exception as exc:
-        log.exception(f"[SEEN] Unexpected error in seen command for '{nick}': {exc}")
+        log.exception(f"[SEEN] Unexpected error in seen command for '{nick}':"
+                      f" {exc}")
         bot.reply(msg, "🔴 Unexpected error in seen command.")

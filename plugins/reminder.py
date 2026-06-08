@@ -135,7 +135,9 @@ def _timezone_lookup_jid(bot, sender_jid, msg, is_room: bool) -> str | None:
         if real_jid:
             return _normalize_bare_jid(real_jid)
     except Exception as exc:
-        log.debug("[REMINDER] Could not resolve JOINED_ROOMS JID for timezone: %s", exc)
+        log.debug(
+            "[REMINDER] Could not resolve JOINED_ROOMS JID for timezone: %s",
+            exc)
 
     return _normalize_bare_jid(sender_jid)
 
@@ -187,7 +189,8 @@ def _reminder_context(bot, sender_jid, nick, msg, is_room: bool):
 
         return {
             "user_jid": user_jid,
-            "timezone_jid": _timezone_lookup_jid(bot, sender_jid, msg, is_room),
+            "timezone_jid": _timezone_lookup_jid(bot, sender_jid,
+                                                 msg, is_room),
             "display_nick": display_nick,
             "room_jid": room_jid,
             "msg_mto": room_jid,
@@ -200,7 +203,8 @@ def _reminder_context(bot, sender_jid, nick, msg, is_room: bool):
 
         return {
             "user_jid": muc_occupant_jid,
-            "timezone_jid": _timezone_lookup_jid(bot, sender_jid, msg, is_room),
+            "timezone_jid": _timezone_lookup_jid(bot, sender_jid,
+                                                 msg, is_room),
             "display_nick": display_nick,
             "room_jid": None,
             "msg_mto": muc_occupant_jid,
@@ -282,10 +286,11 @@ async def _is_reminder_enabled_for_context(bot, msg, is_room: bool) -> bool:
     return await _get_room_reminder_state(bot, room_jid)
 
 
-async def _handle_reminder_control_command(bot, args, msg, is_room: bool) -> bool:
+async def _handle_reminder_control_command(bot, args,
+                                           msg, is_room: bool) -> bool:
     """Handle reminder on/off/status.
 
-    Room contexts are delegated to 
+    Room contexts are delegated to
     utils.plugin_helper.handle_room_toggle_command.  Normal DMs control
     the global runtime kill-switch.
     """
@@ -321,7 +326,8 @@ async def _handle_reminder_control_command(bot, args, msg, is_room: bool) -> boo
             if subcmd == "on" and not before and after and REMINDER_ENABLED:
                 restored = await _restore_pending_reminders(bot)
                 log.info(
-                    "[REMINDER] Room %s enabled via helper; restored %s reminders",
+                    "[REMINDER] Room %s enabled via helper; restored %s"
+                    " reminders",
                     room_jid,
                     restored,
                 )
@@ -329,7 +335,8 @@ async def _handle_reminder_control_command(bot, args, msg, is_room: bool) -> boo
             elif subcmd == "off" and before and not after:
                 cancelled = await _cancel_active_tasks_for_room(bot, room_jid)
                 log.info(
-                    "[REMINDER] Room %s disabled via helper; cancelled %s tasks",
+                    "[REMINDER] Room %s disabled via helper; cancelled %s"
+                    " tasks",
                     room_jid,
                     cancelled,
                 )
@@ -339,7 +346,8 @@ async def _handle_reminder_control_command(bot, args, msg, is_room: bool) -> boo
     # Normal DM: global runtime switch.
     if subcmd == "status":
         global_state = "on" if REMINDER_ENABLED else "off"
-        active_count = sum(1 for task in ACTIVE_REMINDERS.values() if not task.done())
+        active_count = sum(
+            1 for task in ACTIVE_REMINDERS.values() if not task.done())
         bot.reply(
             msg,
             f"ℹ️ Reminder plugin global: {global_state}. "
@@ -492,7 +500,8 @@ def parse_reminder_when(
     if seconds < 1:
         return None, None, None
 
-    display_when = f"on {_format_local_datetime(remind_at, user_tz or _utc_tz())}"
+    display_when = f"on {_format_local_datetime(
+        remind_at, user_tz or _utc_tz())}"
     return seconds, message, display_when
 
 
@@ -700,14 +709,16 @@ async def schedule_reminder_task(
 
         if not REMINDER_ENABLED:
             log.info(
-                "[REMINDER] Reminder %s due while plugin disabled; keeping pending",
+                "[REMINDER] Reminder %s due while plugin disabled; keeping"
+                " pending",
                 reminder_id,
             )
             return
 
         if room_jid and not await _get_room_reminder_state(bot, room_jid):
             log.info(
-                "[REMINDER] Reminder %s due while room %s disabled; keeping pending",
+                "[REMINDER] Reminder %s due while room %s disabled; keeping"
+                " pending",
                 reminder_id,
                 room_jid,
             )
@@ -715,12 +726,14 @@ async def schedule_reminder_task(
 
         if room_jid:
             if overdue_str:
-                reminder_text = f"🔔 {nick}: Reminder (was due {overdue_str}): {message}"
+                reminder_text = (f"🔔 {nick}: Reminder"
+                                 f" (was due {overdue_str}): {message}")
             else:
                 reminder_text = f"🔔 {nick}: Reminder: {message}"
         else:
             if overdue_str:
-                reminder_text = f"🔔 Reminder (was due {overdue_str}): {message}"
+                reminder_text = f"🔔 Reminder (was due {overdue_str}): {
+                    message}"
             else:
                 reminder_text = f"🔔 Reminder: {message}"
 
@@ -757,7 +770,8 @@ async def schedule_reminder_task(
         raise
 
     except Exception as exc:
-        log.exception("[REMINDER] Error in reminder task %s: %s", reminder_id, exc)
+        log.exception(
+            "[REMINDER] Error in reminder task %s: %s", reminder_id, exc)
 
     finally:
         ACTIVE_REMINDERS.pop(reminder_id, None)
@@ -887,7 +901,8 @@ async def _restore_pending_reminders(bot) -> int:
 
         if room_jid and not await _get_room_reminder_state(bot, room_jid):
             log.debug(
-                "[REMINDER] Reminder %s belongs to disabled room %s; skipping restore",
+                "[REMINDER] Reminder %s belongs to disabled room %s;"
+                " skipping restore",
                 reminder_id,
                 room_jid,
             )
@@ -973,14 +988,16 @@ async def remind_command(bot, sender_jid, nick, args, msg, is_room):
     if not REMINDER_ENABLED:
         bot.reply(
             msg,
-            f"⏸️ Reminder plugin is globally off. Use {prefix}remind on in a DM to enable it.",
+            f"⏸️ Reminder plugin is globally off. Use {
+                prefix}remind on in a DM to enable it.",
         )
         return
 
     if not await _is_reminder_enabled_for_context(bot, msg, is_room):
         bot.reply(
             msg,
-            f"⏸️ Reminders are disabled for this room. Use {prefix}reminder on in a MUC DM to enable them here.",
+            f"⏸️ Reminders are disabled for this room. Use {
+                prefix}reminder on in a MUC DM to enable them here.",
         )
         return
 
@@ -1016,7 +1033,8 @@ async def remind_command(bot, sender_jid, nick, args, msg, is_room):
         max_seconds = max_days * 24 * 3600
 
         if seconds > max_seconds:
-            bot.reply(msg, f"❌ Reminder too far in the future. Maximum is {max_days} days.")
+            bot.reply(msg, f"❌ Reminder too far in the future. Maximum is {
+                      max_days} days.")
             return
 
         if len(message) > 500:
@@ -1158,7 +1176,9 @@ async def on_ready(bot):
         await _init_reminder_db(bot)
 
         if not REMINDER_ENABLED:
-            log.info("[REMINDER] Plugin is disabled; pending reminders will not be restored")
+            log.info(
+                "[REMINDER] Plugin is disabled; pending reminders will"
+                " not be restored")
             return
 
         log.info("[REMINDER] Loading pending reminders from database...")

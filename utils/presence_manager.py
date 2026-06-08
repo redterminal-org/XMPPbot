@@ -1,5 +1,4 @@
 import logging
-import asyncio
 
 # === set up logging ===
 log = logging.getLogger(__name__)
@@ -87,7 +86,9 @@ class PresenceManager:
                                 pshow=show,
                                 pstatus=status)
                     except Exception as e:
-                        log.debug(f"[PRESENCE] Failed to send presence to room {room}: {e}")
+                        log.debug(
+                            "[PRESENCE] Failed to send presence to room "
+                            f"{room}: {e}")
         except Exception as e:
             log.debug(f"[PRESENCE] Error accessing rooms plugin: {e}")
 

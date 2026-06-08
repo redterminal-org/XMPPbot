@@ -70,14 +70,16 @@ async def fetch_xkcd(url: str, session: aiohttp.ClientSession | None = None):
             async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
                     return await resp.json()
-                log.debug("[XKCD] Non-200 response for %s: %s", url, resp.status)
+                log.debug("[XKCD] Non-200 response for %s: %s",
+                          url, resp.status)
                 return None
 
         async with aiohttp.ClientSession() as own_session:
             async with own_session.get(url, timeout=10) as resp:
                 if resp.status == 200:
                     return await resp.json()
-                log.debug("[XKCD] Non-200 response for %s: %s", url, resp.status)
+                log.debug("[XKCD] Non-200 response for %s: %s",
+                          url, resp.status)
                 return None
 
     except Exception as exc:
@@ -341,7 +343,8 @@ async def build_full_index(bot):
 
             current_max_id = int(latest.get("num", 0) or 0)
             expected_count = current_max_id - len(
-                {comic_id for comic_id in MISSING_COMIC_IDS if comic_id <= current_max_id}
+                {comic_id for comic_id in MISSING_COMIC_IDS
+                    if comic_id <= current_max_id}
             )
 
             if search_index and len(search_index) >= expected_count:
@@ -517,12 +520,8 @@ async def xkcd_command(bot, sender_jid, nick, args, msg, is_room):
     )
 
     command_prefix = config.get("prefix", ",")
-
     lowered_args = [str(arg).lower() for arg in args]
 
-    # on/off/status are room-management actions and must be restricted
-    # explicitly. This now uses dict storage, consistent with the other
-    # room opt-in plugins.
     if await _core.handle_room_toggle_command(
         bot,
         msg,
@@ -536,160 +535,208 @@ async def xkcd_command(bot, sender_jid, nick, args, msg, is_room):
     ):
         return
 
-    # Commands in MUC PM only work when XKCD is enabled for that room.
-    if is_muc_pm:
-        rooms = await get_subscribed_rooms(bot)
-        if from_jid not in rooms:
-            bot.reply(
-                msg,
-                "ℹ️ XKCD is not enabled in this room.\n"
-                f"Use '{command_prefix}xkcd on' in a MUC DM to enable it.",
-            )
-            log.info("[XKCD] Command blocked: XKCD not enabled in %s",
-                     from_jid)
-            return
+    if await _block_muc_pm_when_disabled(
+        bot,
+        msg,
+        is_muc_pm,
+        from_jid,
+        command_prefix,
+    ):
+        return
 
-    # search command with pagination
     if lowered_args and lowered_args[0] == "search":
-        if len(args) < 2:
-            bot.reply(msg,
-                      f"❌ Usage: {command_prefix}xkcd search <query> [page]")
+        await _handle_xkcd_search(bot, msg, args, lowered_args, command_prefix)
+        return
+
+    if lowered_args and lowered_args[0] == "random":
+        await _handle_xkcd_random(bot, msg, from_jid, target_jid, is_room)
+        return
+
+    if args:
+        handled = await _handle_specific_xkcd(bot, msg, args,
+                                              from_jid, target_jid, is_room)
+        if handled:
             return
 
-        page = 1
-        if len(args) >= 3 and str(args[-1]).isdigit():
-            page = int(args[-1])
-            query = " ".join(str(arg) for arg in args[1:-1]).lower()
-        else:
-            query = " ".join(str(arg) for arg in args[1:]).lower()
+    await _handle_latest_xkcd(bot, msg, from_jid, target_jid, is_room)
 
-        if not query:
-            bot.reply(msg,
-                      f"❌ Usage: {command_prefix}xkcd search <query> [page]")
-            return
 
-        if page < 1:
-            bot.reply(msg, "❌ Page number must be 1 or greater.")
-            return
+async def _block_muc_pm_when_disabled(bot, msg, is_muc_pm,
+                                      from_jid, command_prefix):
+    if not is_muc_pm:
+        return False
 
-        log.debug("[XKCD] Searching for: %s (page %s)", query, page)
+    rooms = await get_subscribed_rooms(bot)
+    if from_jid in rooms:
+        return False
 
-        store = await get_xkcd_store(bot)
-        search_index = await store.get_global(XKCD_INDEX_KEY, default={})
-        if not isinstance(search_index, dict) or not search_index:
-            bot.reply(msg, "❌ Search index not built.\nPlease wait for indexing to complete.")
-            return
+    bot.reply(
+        msg,
+        "ℹ️ XKCD is not enabled in this room.\n"
+        f"Use '{command_prefix}xkcd on' in a MUC DM to enable it.",
+    )
+    log.info("[XKCD] Command blocked: XKCD not enabled in %s", from_jid)
+    return True
 
-        results = []
-        for comic_id_str, comic_data in search_index.items():
-            if not isinstance(comic_data, dict):
+
+async def _handle_xkcd_search(bot, msg, args, lowered_args, command_prefix):
+    if len(args) < 2:
+        bot.reply(msg, f"❌ Usage: {command_prefix}xkcd search <query> [page]")
+        return
+
+    page, query = _parse_xkcd_search_args(args)
+    if not query:
+        bot.reply(msg, f"❌ Usage: {command_prefix}xkcd search <query> [page]")
+        return
+
+    if page < 1:
+        bot.reply(msg, "❌ Page number must be 1 or greater.")
+        return
+
+    log.debug("[XKCD] Searching for: %s (page %s)", query, page)
+
+    store = await get_xkcd_store(bot)
+    search_index = await store.get_global(XKCD_INDEX_KEY, default={})
+    if not isinstance(search_index, dict) or not search_index:
+        bot.reply(
+            msg,
+            "❌ Search index not built.\nPlease wait forindexing to complete.",
+        )
+        return
+
+    results = _search_xkcd_index(search_index, query)
+    if not results:
+        bot.reply(msg, f"❌ No XKCDs found matching '{query}'")
+        return
+
+    results.sort(key=lambda item: item["id"], reverse=True)
+
+    per_page = 10
+    page_results, page, total_pages, total_results = _core.paginate_items(
+        results,
+        page,
+        per_page,
+    )
+
+    msg_lines = [
+        f"🔎 Found {total_results} results for '{query}'"
+        f" (page {page}/{total_pages}):"
+    ]
+
+    start_index = (page - 1) * per_page
+    for i, result in enumerate(page_results, start_index + 1):
+        msg_lines.append(f"{i}. #{result['id']}: {result['title']}")
+        if result["alt"]:
+            msg_lines.append(f"   Alt: {_truncate_alt_text(result['alt'])}")
+
+    if page < total_pages:
+        msg_lines.append(f"\n➡️ Next page: {command_prefix}xkcd"
+                         f" search {query} {page + 1}")
+    if page > 1:
+        msg_lines.append(f"⬅️ Previous page: {command_prefix}xkcd"
+                         f" search {query} {page - 1}")
+
+    bot.reply(msg, "\n".join(msg_lines))
+
+
+def _parse_xkcd_search_args(args):
+    page = 1
+    if len(args) >= 3 and str(args[-1]).isdigit():
+        page = int(args[-1])
+        query = " ".join(str(arg) for arg in args[1:-1]).lower()
+    else:
+        query = " ".join(str(arg) for arg in args[1:]).lower()
+    return page, query
+
+
+def _search_xkcd_index(search_index, query):
+    results = []
+    for comic_id_str, comic_data in search_index.items():
+        if not isinstance(comic_data, dict):
+            continue
+
+        title = comic_data.get("title", "").lower()
+        alt = comic_data.get("alt", "").lower()
+
+        if query in title or query in alt:
+            try:
+                comic_id = int(comic_id_str)
+            except ValueError:
                 continue
 
-            title = comic_data.get("title", "").lower()
-            alt = comic_data.get("alt", "").lower()
+            results.append(
+                {
+                    "id": comic_id,
+                    "title": comic_data.get("title", ""),
+                    "alt": comic_data.get("alt", ""),
+                }
+            )
+    return results
 
-            if query in title or query in alt:
-                try:
-                    comic_id = int(comic_id_str)
-                except ValueError:
-                    continue
 
-                results.append(
-                    {
-                        "id": comic_id,
-                        "title": comic_data.get("title", ""),
-                        "alt": comic_data.get("alt", ""),
-                    }
-                )
+def _truncate_alt_text(alt_text):
+    if len(alt_text) > 80:
+        return alt_text[:80] + "..."
+    return alt_text[:80]
 
-        if not results:
-            bot.reply(msg, f"❌ No XKCDs found matching '{query}'")
-            return
 
-        results.sort(key=lambda item: item["id"], reverse=True)
-
-        per_page = 10
-        page_results, page, total_pages, total_results = _core.paginate_items(
-            results,
-            page,
-            per_page,
-        )
-
-        msg_lines = [
-            f"🔎 Found {total_results} results for '{query}' (page {page}/{total_pages}):"
-        ]
-
-        start_index = (page - 1) * per_page
-        for i, result in enumerate(page_results, start_index + 1):
-            msg_lines.append(f"{i}. #{result['id']}: {result['title']}")
-            if result["alt"]:
-                alt_text = result["alt"][:80]
-                if len(result["alt"]) > 80:
-                    alt_text += "..."
-                msg_lines.append(f"   Alt: {alt_text}")
-
-        if page < total_pages:
-            msg_lines.append(f"\n➡️ Next page: {command_prefix}xkcd search {query} {page + 1}")
-        if page > 1:
-            msg_lines.append(f"⬅️ Previous page: {command_prefix}xkcd search {query} {page - 1}")
-
-        bot.reply(msg, "\n".join(msg_lines))
+async def _handle_xkcd_random(bot, msg, from_jid, target_jid, is_room):
+    latest = await get_latest_xkcd()
+    if not latest:
+        bot.reply(msg, "❌ Failed to fetch XKCD data.")
         return
 
-    # random command
-    if lowered_args and lowered_args[0] == "random":
-        latest = await get_latest_xkcd()
-        if not latest:
-            bot.reply(msg, "❌ Failed to fetch XKCD data.")
-            return
+    max_id = int(latest.get("num", 1) or 1)
 
-        max_id = int(latest.get("num", 1) or 1)
-
-        for _ in range(20):
-            random_id = random.randint(1, max_id)
-            if random_id not in MISSING_COMIC_IDS:
-                break
-        else:
-            bot.reply(msg, "❌ Failed to pick a valid random XKCD.")
-            return
-
-        comic = await get_xkcd(random_id)
-        if comic:
-            if is_room:
-                await send_xkcd_room(bot, from_jid, comic)
-            else:
-                await send_xkcd_dm(bot, target_jid, comic)
-        else:
-            bot.reply(msg, f"❌ Failed to fetch XKCD #{random_id}.")
+    random_id = _pick_valid_random_xkcd_id(max_id)
+    if random_id is None:
+        bot.reply(msg, "❌ Failed to pick a valid random XKCD.")
         return
 
-    # specific comic number
-    if args:
-        try:
-            comic_id = int(args[0])
+    comic = await get_xkcd(random_id)
+    if comic:
+        if is_room:
+            await send_xkcd_room(bot, from_jid, comic)
+        else:
+            await send_xkcd_dm(bot, target_jid, comic)
+    else:
+        bot.reply(msg, f"❌ Failed to fetch XKCD #{random_id}.")
 
-            if comic_id in MISSING_COMIC_IDS:
-                bot.reply(msg, f"❌ XKCD #{comic_id} does not exist.")
-                return
 
-            if comic_id < 1:
-                bot.reply(msg, "❌ XKCD number must be 1 or greater.")
-                return
+def _pick_valid_random_xkcd_id(max_id):
+    for _ in range(20):
+        random_id = random.randint(1, max_id)
+        if random_id not in MISSING_COMIC_IDS:
+            return random_id
+    return None
 
-            comic = await get_xkcd(comic_id)
-            if comic:
-                if is_room:
-                    await send_xkcd_room(bot, from_jid, comic)
-                else:
-                    await send_xkcd_dm(bot, target_jid, comic)
-            else:
-                bot.reply(msg, f"❌ XKCD #{comic_id} not found.")
-            return
 
-        except ValueError:
-            pass
+async def _handle_specific_xkcd(bot, msg, args, from_jid, target_jid, is_room):
+    try:
+        comic_id = int(args[0])
+    except ValueError:
+        return False
 
-    # default: latest comic
+    if comic_id in MISSING_COMIC_IDS:
+        bot.reply(msg, f"❌ XKCD #{comic_id} does not exist.")
+        return True
+
+    if comic_id < 1:
+        bot.reply(msg, "❌ XKCD number must be 1 or greater.")
+        return True
+
+    comic = await get_xkcd(comic_id)
+    if comic:
+        if is_room:
+            await send_xkcd_room(bot, from_jid, comic)
+        else:
+            await send_xkcd_dm(bot, target_jid, comic)
+    else:
+        bot.reply(msg, f"❌ XKCD #{comic_id} not found.")
+    return True
+
+
+async def _handle_latest_xkcd(bot, msg, from_jid, target_jid, is_room):
     latest = await get_latest_xkcd()
     if latest:
         if is_room:

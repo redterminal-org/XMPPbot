@@ -42,7 +42,6 @@ from plugins._core import (
     cache_message,
     handle_room_toggle_command,
     paginate_items,
-    _get_enabled_rooms,
 )
 
 log = logging.getLogger(__name__)
@@ -80,7 +79,8 @@ def _trim(text: str | None, limit: int = 700) -> str:
     return text[: limit - 1] + "…"
 
 
-def _trim_preview(text: str | None, max_lines: int = 1, max_chars: int = 240) -> str:
+def _trim_preview(text: str | None, max_lines: int = 1,
+                  max_chars: int = 240) -> str:
     if not text:
         return ""
 
@@ -232,7 +232,8 @@ def _format_pin_line(entry: dict[str, Any]) -> str:
     target_nick = entry.get("target_nick") or "unknown"
     preview = _trim_preview(entry.get("preview") or entry.get("target_text")
                             or "—", max_lines=1, max_chars=240)
-    return f"• #{pin_id} by {actor_nick} at {created_at} | target: {target_nick} | {preview}"
+    return (f"• #{pin_id} by {actor_nick} at {created_at} "
+            f"| target: {target_nick} | {preview}")
 
 
 def _find_pin(bucket: dict[str, Any], pin_id: int) -> dict[str, Any] | None:
@@ -528,7 +529,9 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
 
     room = _room_key_from_msg(msg, is_room)
     if not room:
-        bot.reply(msg, "ℹ️ This command only works in rooms or MUC private messages.")
+        bot.reply(
+            msg,
+            "ℹ️ This command only works in rooms or MUC private messages.")
         return
 
     subcmd = str(args[0]).lower()
@@ -559,12 +562,14 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         page_items, page, total_pages, total = paginate_items(pins, page,
                                                               PAGE_SIZE)
 
-        lines = [f"📌 Pins for {room} ({total}) - Page {page}/{total_pages}", ""]
+        lines = [f"📌 Pins for {
+            room} ({total}) - Page {page}/{total_pages}", ""]
         lines.extend(_format_pin_line(entry) for entry in page_items)
 
         if page < total_pages:
             lines.append("")
-            lines.append(f"Use {_prefix()}pin list {page + 1} for the next page.")
+            lines.append(f"Use {_prefix()}pin list {
+                         page + 1} for the next page.")
 
         bot.reply(msg, lines, mention=False)
         return
@@ -596,7 +601,8 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
             f"📌 Pin #{entry.get('id')}",
             f"Room: {entry.get('room') or room}",
             f"Created: {_format_timestamp(entry.get('created_at'))}",
-            f"Pinned by: {entry.get('actor_nick') or 'unknown'} ({entry.get('actor_jid') or 'unknown'})",
+            f"Pinned by: {entry.get('actor_nick') or 'unknown'} ({
+                entry.get('actor_jid') or 'unknown'})",
             f"Target nick: {entry.get('target_nick') or 'unknown'}",
             f"Reply target id: {entry.get('reply_id') or 'unknown'}",
             f"Target stanza id: {entry.get('target_stanza_id') or 'unknown'}",
@@ -621,7 +627,8 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
 
         # permission guard
         if not await _sender_can_manage_pins_in_room(bot, msg, room):
-            bot.reply(msg, "⛔ Only room moderators/admins/owners can delete pins.",
+            bot.reply(msg,
+                      "⛔ Only room moderators/admins/owners can delete pins.",
                       mention=False)
             return
 
@@ -658,7 +665,8 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if not is_room:
-        bot.reply(msg, f"ℹ️ To create a pin, use {_prefix()}pin add as a reply or {_prefix()}pin add last")
+        bot.reply(msg, f"ℹ️ To create a pin, use {
+                  _prefix()}pin add as a reply or {_prefix()}pin add last")
         return
 
     if not await _is_enabled_for_room(bot, PIN_ENABLED_KEY, "pin", room):
@@ -685,9 +693,11 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
         recent_entry = _get_recent_target(room, offset=offset)
         if not recent_entry:
             if offset == 1:
-                bot.reply(msg, f"❌ No suitable cached message found for {_prefix()}pin add last")
+                bot.reply(msg, f"❌ No suitable cached message found for {
+                          _prefix()}pin add last")
             else:
-                bot.reply(msg, f"❌ No suitable cached message found for {_prefix()}pin add last {offset}")
+                bot.reply(msg, f"❌ No suitable cached message found for {
+                          _prefix()}pin add last {offset}")
             return
 
         await _create_pin_entry(
@@ -708,7 +718,8 @@ async def pin_command(bot, sender_jid, nick, args, msg, is_room):
 
     bot.reply(
         msg,
-        f"❌ Reply to a room message and then send {_prefix()}pin add, or use {_prefix()}pin add last",
+        f"❌ Reply to a room message and then send {_prefix()}pin add, or use {
+            _prefix()}pin add last",
         mention=False,
     )
 

@@ -5,8 +5,6 @@ import aiosqlite
 from .users import UserManager
 from .rooms import Rooms
 
-from utils.config import config
-
 # logger for this module
 log = logging.getLogger(__name__)
 
@@ -80,7 +78,8 @@ class DatabaseManager:
             if self.users:
                 await self._flush_with_retry()
 
-    async def _flush_with_retry(self, max_retries: int = 3, backoff: float = 1.0):
+    async def _flush_with_retry(self, max_retries: int = 3,
+                                backoff: float = 1.0):
         """
         Flush with exponential backoff retry logic.
 
@@ -88,13 +87,11 @@ class DatabaseManager:
             max_retries: Maximum number of retry attempts
             backoff: Initial backoff in seconds (exponential growth)
         """
-        last_error = None
         for attempt in range(max_retries):
             try:
                 await self.users.flush_all()
                 return  # Success
             except Exception as e:
-                last_error = e
                 if attempt < max_retries - 1:
                     wait_time = backoff * (2 ** attempt)
                     log.warning(
@@ -105,7 +102,8 @@ class DatabaseManager:
                     await asyncio.sleep(wait_time)
                 else:
                     log.exception(
-                        "[DatabaseManager] 🔴 Flush failed after %d attempts: %s",
+                        "[DatabaseManager] 🔴 Flush failed after %d attempts:"
+                        " %s",
                         max_retries, e
                     )
 
@@ -128,14 +126,16 @@ class DatabaseManager:
         if self.conn:
             await self.conn.close()
 
-    async def execute(self, query: str, params: tuple | None = None, auto_commit: bool = True):
+    async def execute(self, query: str, params: tuple | None = None,
+                      auto_commit: bool = True):
         """
         Execute a write query (INSERT/UPDATE/DELETE).
 
         Args:
             query: SQL query string
             params: Query parameters (optional)
-            auto_commit: If True, automatically commits. If False, caller must commit
+            auto_commit: If True, automatically commits. If False, caller
+            must commit
 
         When used within an explicit transaction (BEGIN...COMMIT),
         set auto_commit=False to prevent premature commits.

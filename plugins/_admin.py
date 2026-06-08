@@ -15,7 +15,7 @@ import psutil
 from datetime import datetime
 from utils.command import command, Role
 from plugins._core import (
-        JOINED_ROOMS,
+    JOINED_ROOMS,
 )
 
 log = logging.getLogger(__name__)
@@ -86,6 +86,119 @@ def human_size(size_bytes: int) -> str:
     return f"{size_bytes} B"
 
 
+# ------------------------------------------------
+# Helper functions to reduce cyclomatic complexity
+# ------------------------------------------------
+async def _get_db_status(bot):
+    lines = []
+    # Database status
+    db_status = "✅ Connected" if getattr(
+        bot, "db", None) else "❌ Disconnected"
+    lines.append(f"Database: {db_status}")
+
+    # Database size
+    try:
+        db_path = getattr(bot.db, "path", None)
+        if db_path and os.path.exists(db_path):
+            db_size = os.path.getsize(db_path)
+            lines.append(f"Database Size: {human_size(db_size)}")
+        elif db_path:
+            lines.append(f"Database Size: file not found ({db_path})")
+    except Exception as e:
+        log.debug("[ADMIN] Could not get database size: %s", e)
+    return lines
+
+
+async def _get_plugin_status(bot):
+    lines = []
+    # Loaded plugins
+    loaded_plugins = len(bot.bot_plugins.plugins)
+    available_plugins = len(list(bot.bot_plugins.discover()))
+    lines.append(f"Plugins: {loaded_plugins}/{available_plugins} loaded")
+    lines.append("")
+    return lines
+
+
+async def _get_bot_uptime(bot):
+    # Time the bot is running
+    if BOT_START_TIME:
+        bot_uptime = datetime.now() - BOT_START_TIME
+        bot_uptime_str = human_time(bot_uptime.total_seconds())
+        return [f"Bot Uptime: {bot_uptime_str}"]
+
+
+async def _get_connection_time(bot):
+    # Server/XMPP connection uptime
+    try:
+        connection_start = getattr(bot, "connection_start_time", None)
+        if connection_start:
+            connection_uptime = datetime.now() - connection_start
+            connection_uptime_str = human_time(
+                connection_uptime.total_seconds()
+            )
+            return [f"Server Connection: {connection_uptime_str}"]
+    except Exception as e:
+        log.debug("[ADMIN] Could not get connection uptime: %s", e)
+        return ["Server Connection: unknown"]
+
+
+async def _get_memory_usage(bot):
+    # Memory usage
+    try:
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+        memory_mb = memory_info.rss / 1024 / 1024
+        return [f"Memory Usage: {memory_mb:.1f} MB"]
+    except Exception as e:
+        log.debug("[ADMIN] Could not get memory info: %s", e)
+        return ["Memory Usage: unknown"]
+
+
+async def _get_cpu_usage(bot):
+    lines = []
+    # CPU usage
+    try:
+        process = psutil.Process(os.getpid())
+        loop = asyncio.get_event_loop()
+
+        cpu_percent = await loop.run_in_executor(
+            None,
+            process.cpu_percent,
+            1.0
+        )
+
+        cpu_load = psutil.getloadavg()[0]
+        cpu_count = psutil.cpu_count()
+
+        lines.append(f"CPU Usage: {cpu_percent:.1f}% (Process)")
+        lines.append(f"System Load: {cpu_load:.2f} ({cpu_count} cores)")
+        lines.append("")
+    except Exception as e:
+        log.debug("[ADMIN] Could not get CPU info: %s", e)
+        lines.append("CPU usage/system load: unknown")
+        lines.append("")
+    return lines
+
+
+async def _get_joined_rooms(bot):
+    lines = []
+    # Connected rooms (from rooms plugin)
+    try:
+        joined_rooms = len(JOINED_ROOMS)
+        lines.append(f"Connected Rooms: {joined_rooms}")
+        if joined_rooms > 0:
+            for room, room_data in sorted(JOINED_ROOMS.items()):
+                room_nick = room_data.get("nick", "unknown")
+                lines.append(f"  • {room} (nick: {room_nick})")
+    except Exception as e:
+        log.debug("[ADMIN] Could not get rooms info: %s", e)
+        lines.append("Connected Rooms: unknown")
+    return lines
+
+
+# --------------
+# ADMIN COMMANDS
+# --------------
 @command("bot restart", role=Role.OWNER, aliases=["restart"])
 async def bot_restart(bot, sender, nick, args, msg, is_room):
     """
@@ -111,7 +224,8 @@ async def bot_restart(bot, sender, nick, args, msg, is_room):
     try:
         await asyncio.wait_for(bot.disconnected, timeout=5)
     except asyncio.TimeoutError:
-        log.warning("[ADMIN] Disconnect timeout - proceeding with restart anyway")
+        log.warning(
+            "[ADMIN] Disconnect timeout - proceeding with restart anyway")
 
     # Close database
     try:
@@ -122,9 +236,11 @@ async def bot_restart(bot, sender, nick, args, msg, is_room):
     # Store restart notification info to file
     notification_data = {
         "sender": str(sender),
-        "sender_bare": str(sender.bare) if hasattr(sender, "bare") else str(sender),
+        "sender_bare":
+            str(sender.bare) if hasattr(sender, "bare") else str(sender),
         "nick": nick,
-        "room": str(msg["from"].bare) if msg.get("type") == "groupchat" else None,
+        "room":
+            str(msg["from"].bare) if msg.get("type") == "groupchat" else None,
         "is_room": is_room,
     }
 
@@ -190,6 +306,8 @@ async def bot_status(bot, sender, nick, args, msg, is_room):
         {prefix}bot status
         {prefix}bot info
     """
+    # The functions to get the information was separated to reduce cyclomatic
+    # complexity
     try:
         set_bot_start_time(bot)
 
@@ -200,84 +318,20 @@ async def bot_status(bot, sender, nick, args, msg, is_room):
         lines.append(f"JID: {bot.boundjid}")
         lines.append("")
 
-        # Database status
-        db_status = "✅ Connected" if getattr(bot, "db", None) else "❌ Disconnected"
-        lines.append(f"Database: {db_status}")
-
-        # Database size
-        try:
-            db_path = getattr(bot.db, "path", None)
-            if db_path and os.path.exists(db_path):
-                db_size = os.path.getsize(db_path)
-                lines.append(f"Database Size: {human_size(db_size)}")
-            elif db_path:
-                lines.append(f"Database Size: file not found ({db_path})")
-        except Exception as e:
-            log.debug("[ADMIN] Could not get database size: %s", e)
-
-        # Loaded plugins
-        loaded_plugins = len(bot.bot_plugins.plugins)
-        available_plugins = len(list(bot.bot_plugins.discover()))
-        lines.append(f"Plugins: {loaded_plugins}/{available_plugins} loaded")
-        lines.append("")
-
-        # Bot uptime
-        if BOT_START_TIME:
-            bot_uptime = datetime.now() - BOT_START_TIME
-            bot_uptime_str = human_time(bot_uptime.total_seconds())
-            lines.append(f"Bot Uptime: {bot_uptime_str}")
-
-        # Server/XMPP connection uptime
-        try:
-            connection_start = getattr(bot, "connection_start_time", None)
-            if connection_start:
-                connection_uptime = datetime.now() - connection_start
-                connection_uptime_str = human_time(
-                    connection_uptime.total_seconds()
-                )
-                lines.append(f"Server Connection: {connection_uptime_str}")
-        except Exception as e:
-            log.debug("[ADMIN] Could not get connection uptime: %s", e)
-
-        # Memory usage
-        try:
-            process = psutil.Process(os.getpid())
-            memory_info = process.memory_info()
-            memory_mb = memory_info.rss / 1024 / 1024
-            lines.append(f"Memory Usage: {memory_mb:.1f} MB")
-        except Exception as e:
-            log.debug("[ADMIN] Could not get memory info: %s", e)
-
-        # CPU usage
-        try:
-            process = psutil.Process(os.getpid())
-            loop = asyncio.get_event_loop()
-
-            cpu_percent = await loop.run_in_executor(
-                None,
-                process.cpu_percent,
-                1.0
-            )
-
-            cpu_load = psutil.getloadavg()[0]
-            cpu_count = psutil.cpu_count()
-
-            lines.append(f"CPU Usage: {cpu_percent:.1f}% (Process)")
-            lines.append(f"System Load: {cpu_load:.2f} ({cpu_count} cores)")
-            lines.append("")
-        except Exception as e:
-            log.debug("[ADMIN] Could not get CPU info: %s", e)
-
-        # Connected rooms (from rooms plugin)
-        try:
-            joined_rooms = len(JOINED_ROOMS)
-            lines.append(f"Connected Rooms: {joined_rooms}")
-            if joined_rooms > 0:
-                for room, room_data in sorted(JOINED_ROOMS.items()):
-                    room_nick = room_data.get("nick", "unknown")
-                    lines.append(f"  • {room} (nick: {room_nick})")
-        except Exception as e:
-            log.debug("[ADMIN] Could not get rooms info: %s", e)
+        # get database status
+        lines.extend(await _get_db_status(bot))
+        # get plugin status
+        lines.extend(await _get_plugin_status(bot))
+        # get bot uptime
+        lines.extend(await _get_bot_uptime(bot))
+        # get server connection time
+        lines.extend(await _get_connection_time(bot))
+        # get memory usage
+        lines.extend(await _get_memory_usage(bot))
+        # get CPU usage
+        lines.extend(await _get_cpu_usage(bot))
+        # get joined rooms
+        lines.extend(await _get_joined_rooms(bot))
 
         bot.reply(msg, lines)
 

@@ -39,12 +39,14 @@ class TokenBucketRateLimiter:
         self.backoff_multiplier = backoff_multiplier
         self.max_block_seconds = max_block_seconds
 
-        # minimal notify cooldown to avoid repeated "you're rate limited" responses
+        # minimal notify cooldown to avoid repeated "you're rate limited"
+        # responses
         self.notify_cooldown = notify_cooldown
 
         # per-client state
         self._state = {}  # client_id -> {tokens, last_refill, lock}
-        self._denials = defaultdict(deque)  # client_id -> deque[timestamp_of_denial]
+        # client_id -> deque[timestamp_of_denial]
+        self._denials = defaultdict(deque)
         self._block_info = {}  # client_id -> (blocked_until, block_count)
         self._last_notify = {}  # client_id -> last_notification_time
 
@@ -107,10 +109,12 @@ class TokenBucketRateLimiter:
             if blocked:
                 blocked_until, _ = self._block_info.get(client_id, (0.0, 0))
                 return False, max(0.0, blocked_until - now)
-            # Not blocked yet, but still rate-limited: return a short retry estimate
+            # Not blocked yet, but still rate-limited: return a short retry
+            # estimate.
             # Estimate based on time until next token (simple heuristic)
             time_since_refill = now - state["last_refill"]
-            time_until_next = max(0.0, self.refill_interval - time_since_refill)
+            time_until_next = max(
+                0.0, self.refill_interval - time_since_refill)
             return False, time_until_next
 
     def _record_denial(self, client_id: str, now: float):
@@ -147,8 +151,9 @@ class TokenBucketRateLimiter:
 
     def notify_allowed(self, client_id: str) -> bool:
         """
-        Return True if we should send a human-facing notification now for this client.
-        Throttles notifications to at most one per notify_cooldown seconds.
+        Return True if we should send a human-facing notification now for this
+        client. Throttles notifications to at most one per notify_cooldown
+        seconds.
         Non-async (fast) — safe to call from sync code.
         """
         now = self._now()

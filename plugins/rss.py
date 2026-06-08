@@ -86,7 +86,8 @@ def _should_include_description(
     Args:
         title: Entry title
         description: Entry description
-        similarity_threshold: Similarity score (0-1) above which they're considered duplicates
+        similarity_threshold: Similarity score (0-1) above which they're
+                              considered duplicates
 
     Returns:
         True if description is meaningfully different, False otherwise
@@ -118,7 +119,8 @@ def _extract_entry_link(entry) -> str:
     """
     Extract the best link from an entry following feed standards.
 
-    Supports dict-style (feedparser) and object-style (SimpleNamespace) entries.
+    Supports dict-style (feedparser) and object-style (SimpleNamespace)
+    entries.
 
     For Atom feeds: Check entry.links with rel="alternate"
     For JSON Feed: Check entry.url
@@ -143,22 +145,26 @@ def _extract_entry_link(entry) -> str:
             if isinstance(link_obj, dict):
                 if link_obj.get("rel") in (None, "alternate"):
                     href = link_obj.get("href")
-                    if href and isinstance(href, str) and href.startswith(("http://", "https://")):
+                    if (href and isinstance(href, str)
+                            and href.startswith(("http://", "https://"))):
                         return href.strip()
 
     # Standard entry.link
     entry_link = _get(entry, "link")
-    if entry_link and isinstance(entry_link, str) and entry_link.startswith(("http://", "https://")):
+    if (entry_link and isinstance(entry_link, str)
+            and entry_link.startswith(("http://", "https://"))):
         return entry_link.strip()
 
     # JSON Feed standard: entry.url
     entry_url = _get(entry, "url")
-    if entry_url and isinstance(entry_url, str) and entry_url.startswith(("http://", "https://")):
+    if (entry_url and isinstance(entry_url, str)
+            and entry_url.startswith(("http://", "https://"))):
         return entry_url.strip()
 
     # Fallback: entry.id (if it's a URL)
     entry_id = _get(entry, "id")
-    if entry_id and isinstance(entry_id, str) and entry_id.startswith(("http://", "https://")):
+    if (entry_id and isinstance(entry_id, str)
+            and entry_id.startswith(("http://", "https://"))):
         return entry_id.strip()
 
     return ""
@@ -268,15 +274,17 @@ def _resolve_relative_url(base_url: str, relative_url: str) -> str:
     try:
         return urljoin(base_url, relative_url)
     except Exception as e:
-        log.warning(f"Failed to resolve relative URL {relative_url} against {base_url}: {e}")
+        log.warning(f"Failed to resolve relative URL {
+                    relative_url} against {base_url}: {e}")
         return relative_url
 
 
 def _get_feed_headers() -> dict[str, str]:
     """Get HTTP headers for feed requests."""
+    accept = "application/rss+xml, application/atom+xml, application/json, */*"
     return {
         "User-Agent": "envsbot/1.0 +https://github.com/envs/envsbot",
-        "Accept": "application/rss+xml, application/atom+xml, application/json, */*",
+        "Accept": accept,
     }
 
 
@@ -297,7 +305,8 @@ async def fetch_feed(url):
     """
     Fetch and parse RSS feed with proper URL handling.
 
-    Prevents feedparser from modifying the feed URL through redirects or normalization.
+    Prevents feedparser from modifying the feed URL through redirects or
+    normalization.
 
     Args:
         url: Feed URL to fetch
@@ -326,16 +335,232 @@ async def fetch_feed(url):
     return result
 
 
+async def _load_feed(store, url):
+    feeds = await get_feeds(store)
+    return feeds, feeds.get(url)
+
+
+async def _update_feed(bot, store, url, mutator):
+    """
+    Load feeds, mutate the feed at `url` in-place if it exists, then persist.
+    `mutator(feed)` should return True if it made a meaningful change.
+    """
+    feeds = await get_feeds(store)
+    feed = feeds.get(url)
+    if feed is None:
+        return False
+
+    changed = mutator(feed)
+    if changed:
+        await save_feeds(store, feeds)
+        await _flush_user_store(bot)
+
+    return changed
+
+
+async def _set_feed_field(bot, store, url, field, value):
+    def mutator(feed):
+        if feed.get(field) == value:
+            return False
+        feed[field] = value
+        return True
+
+    return await _update_feed(bot, store, url, mutator)
+
+
+async def _set_retry_state(bot, store, url, error_count, next_retry):
+    return await _update_feed(
+        bot,
+        store,
+        url,
+        lambda feed: _apply_retry_state(feed, error_count, next_retry),
+    )
+
+
+def _apply_retry_state(feed, error_count, next_retry):
+    changed = False
+    if feed.get("error_count", 0) != error_count:
+        feed["error_count"] = error_count
+        changed = True
+    if feed.get("next_retry", 0) != next_retry:
+        feed["next_retry"] = next_retry
+        changed = True
+    return changed
+
+
+async def _reset_retry_state(bot, store, url):
+    return await _set_retry_state(bot, store, url, 0, 0)
+
+
+async def _update_feed_link(bot, store, url, feed_link):
+    return await _set_feed_field(bot, store, url, "link", feed_link)
+
+
+async def _initialize_last_id(bot, store, url, latest_id):
+    if not latest_id:
+        return False
+    return await _set_feed_field(bot, store, url, "last_id", latest_id)
+
+
+def _build_rss_message(feed_title, entry_title, entry_desc, entry_link):
+    if _should_include_description(entry_title, entry_desc):
+        out = f"[RSS] ({feed_title}) {entry_title} - {entry_desc}\n"
+        out += f"{entry_link}"
+        return out
+    return f"[RSS] ({feed_title}) {entry_title}\n{entry_link}"
+
+
+def _entry_is_new(last_id, entry):
+    entry_id = _get_entry_id(entry)
+    if not entry_id:
+        return False, None
+    if entry_id == last_id:
+        return False, entry_id
+    return True, entry_id
+
+
+async def _post_entry_to_rooms(bot, rooms, msg):
+    posted = False
+    for room in rooms:
+        if room in JOINED_ROOMS:
+            bot.reply(
+                {
+                    "from": type("F", (), {"bare": room})(),
+                    "type": "groupchat",
+                },
+                msg,
+                mention=False,
+                thread=True,
+                rate_limit=False,
+                ephemeral=False,
+            )
+            posted = True
+    return posted
+
+
+async def _save_last_id(bot, store, url, entry_id):
+    return await _set_feed_field(bot, store, url, "last_id", entry_id)
+
+
+async def _handle_fetch_error(bot, store, url, period, now, error_count, exc):
+    log.warning("Failed to fetch RSS feed %s: %s", url, exc)
+
+    error_count += 1
+    backoff_delay = (DEFAULT_POLL_INTERVAL *
+                     BACKOFF_INCREMENT_MULTIPLIER * error_count)
+    backoff_delay = min(backoff_delay, MAX_BACKOFF_TIME)
+    next_retry = now + backoff_delay
+
+    await _set_retry_state(bot, store, url, error_count, next_retry)
+    log.debug(
+        "Feed %s backoff set to %s errors, retry at %s",
+        url,
+        error_count,
+        next_retry,
+    )
+    await asyncio.sleep(period)
+
+
+async def _sleep_for_retry(period, next_retry, now):
+    if next_retry > now:
+        await asyncio.sleep(min(period, next_retry - now))
+        return True
+    return False
+
+
+async def _handle_empty_feed(url, period, parsed):
+    if not parsed.entries:
+        log.debug("Feed %s has no entries", url)
+        await asyncio.sleep(period)
+        return True
+    return False
+
+
+async def _handle_feed_recovery(bot, store, url, error_count):
+    if error_count > 0:
+        log.debug("Feed %s recovered, resetting error count", url)
+        await _reset_retry_state(bot, store, url)
+
+
+async def _maybe_update_feed_link(bot, store, url, parsed, feed_link):
+    if "feed" in parsed and "link" in parsed.feed:
+        feed_link = parsed.feed["link"]
+        await _update_feed_link(bot, store, url, feed_link)
+    return feed_link
+
+
+async def _initialize_missing_last_id(bot, store, url, last_id, parsed):
+    if not last_id:
+        latest_id = _get_latest_entry_id(parsed)
+        if latest_id:
+            await _initialize_last_id(bot, store, url, latest_id)
+            log.info(
+                "[RSS] Initialized last_id for %s without posting old entries",
+                url,
+            )
+        return True
+    return False
+
+
+def _collect_new_entries(parsed, last_id):
+    new_entries = []
+    for entry in parsed.entries:
+        is_new, entry_id = _entry_is_new(last_id, entry)
+        if not entry_id:
+            continue
+        if not is_new:
+            break
+        new_entries.append((entry, entry_id))
+    return new_entries
+
+
+async def _post_new_entries(bot, store, url, feed_title,
+                            feed_link, rooms, new_entries):
+    for entry, entry_id in reversed(new_entries):
+        entry_link = _normalize_url(
+            _resolve_relative_url(feed_link, _extract_entry_link(entry))
+        )
+        entry_title = html_to_text_with_links(
+            entry_get(entry, "title", "No title")
+        )
+        entry_desc = html_to_text_with_links(
+            entry_get(entry, "description", "")
+        )
+
+        msg = _build_rss_message(
+            feed_title,
+            entry_title,
+            entry_desc,
+            entry_link,
+        )
+
+        posted = await _post_entry_to_rooms(bot, rooms, msg)
+
+        if not await _save_last_id(bot, store, url, entry_id):
+            log.warning("Feed %s was deleted during posting!", url)
+            break
+
+        if posted:
+            log.debug(
+                "[RSS] Posted and saved last_id for %s: %s",
+                url,
+                entry_id,
+            )
+        else:
+            log.debug(
+                "[RSS] Saved last_id for %s without posting; no joined rooms",
+                url,
+            )
+
+
 async def rss_check_loop(bot, store, url, period):
     """Periodically check a feed for updates and post new items."""
     while True:
-        feeds = await get_feeds(store)
+        _, feed = await _load_feed(store, url)
 
-        # Exit loop if feed has been deleted
-        if url not in feeds:
+        if feed is None:
             break
 
-        feed = feeds[url]
         feed_title = feed["title"]
         feed_link = feed.get("link", url)
         last_id = feed.get("last_id")
@@ -343,143 +568,36 @@ async def rss_check_loop(bot, store, url, period):
         error_count = feed.get("error_count", 0)
         next_retry = feed.get("next_retry", 0)
 
-        # Check if we should retry based on backoff
         now = _now()
-        if next_retry > now:
-            await asyncio.sleep(min(period, next_retry - now))
+
+        if await _sleep_for_retry(period, next_retry, now):
             continue
 
         try:
             parsed = await fetch_feed(url)
         except Exception as e:
-            log.warning(f"Failed to fetch RSS feed {url}: {e}")
-
-            # Apply exponential backoff
-            error_count += 1
-            backoff_delay = DEFAULT_POLL_INTERVAL * BACKOFF_INCREMENT_MULTIPLIER * error_count
-            backoff_delay = min(backoff_delay, MAX_BACKOFF_TIME)
-            next_retry = now + backoff_delay
-
-            feeds = await get_feeds(store)
-            if url in feeds:
-                feeds[url]["error_count"] = error_count
-                feeds[url]["next_retry"] = next_retry
-                await save_feeds(store, feeds)
-                await _flush_user_store(bot)
-
-            log.debug(f"Feed {url} backoff set to {error_count} errors, retry at {next_retry}")
-            await asyncio.sleep(period)
-            continue
-
-        if not parsed.entries:
-            log.debug(f"Feed {url} has no entries")
-            await asyncio.sleep(period)
-            continue
-
-        # Reset error count on successful fetch
-        if error_count > 0:
-            log.debug(f"Feed {url} recovered, resetting error count")
-            feeds = await get_feeds(store)
-            if url in feeds:
-                feeds[url]["error_count"] = 0
-                feeds[url]["next_retry"] = 0
-                await save_feeds(store, feeds)
-                await _flush_user_store(bot)
-
-        # Update feed link for URL resolution if available
-        if "feed" in parsed and "link" in parsed.feed:
-            feed_link = parsed.feed["link"]
-            feeds = await get_feeds(store)
-            if url in feeds and feeds[url].get("link") != feed_link:
-                feeds[url]["link"] = feed_link
-                await save_feeds(store, feeds)
-                await _flush_user_store(bot)
-
-        # If last_id is missing, initialize it to the newest current item.
-        # This prevents restarts or older broken state from reposting the
-        # complete visible feed history.
-        if not last_id:
-            latest_id = _get_latest_entry_id(parsed)
-            if latest_id:
-                feeds = await get_feeds(store)
-                if url in feeds:
-                    feeds[url]["last_id"] = latest_id
-                    await save_feeds(store, feeds)
-                    await _flush_user_store(bot)
-                    log.info("[RSS] Initialized last_id for %s without posting old entries", url)
-
-            await asyncio.sleep(period)
-            continue
-
-        # Find new entries
-        new_entries = []
-        for entry in parsed.entries:
-            entry_id = _get_entry_id(entry)
-            if not entry_id:
-                continue
-
-            if last_id == entry_id:
-                break
-
-            new_entries.append(entry)
-
-        # Post new entries in reverse order (oldest first)
-        for entry in reversed(new_entries):
-            entry_link = _extract_entry_link(entry)
-            entry_id = _get_entry_id(entry)
-
-            entry_title = html_to_text_with_links(
-                entry_get(entry, "title", "No title")
+            await _handle_fetch_error(
+                bot, store, url, period, now, error_count, e
             )
-            entry_desc = html_to_text_with_links(entry_get(entry, "description", ""))
+            continue
 
-            # Resolve relative URLs
-            entry_link = _resolve_relative_url(feed_link, entry_link)
-            entry_link = _normalize_url(entry_link)
+        if await _handle_empty_feed(url, period, parsed):
+            continue
 
-            # Only add description if it's meaningfully different from title
-            if _should_include_description(entry_title, entry_desc):
-                msg = f"[RSS] ({feed_title}) {entry_title} - {entry_desc}\n"
-            else:
-                msg = f"[RSS] ({feed_title}) {entry_title}\n"
+        await _handle_feed_recovery(bot, store, url, error_count)
 
-            msg += f"{entry_link}"
+        feed_link = await _maybe_update_feed_link(
+            bot, store, url, parsed, feed_link
+        )
 
-            posted = False
-            for room in rooms:
-                if room in JOINED_ROOMS:
-                    bot.reply(
-                        {
-                            "from": type(
-                                "F",
-                                (),
-                                {"bare": room},
-                            )(),
-                            "type": "groupchat",
-                        },
-                        msg,
-                        mention=False,
-                        thread=True,
-                        rate_limit=False,
-                        ephemeral=False,
-                    )
-                    posted = True
+        if await _initialize_missing_last_id(bot, store, url, last_id, parsed):
+            await asyncio.sleep(period)
+            continue
 
-            # Save last_id immediately after each handled entry and flush it.
-            # This makes duplicate RSS output much less likely after restarts.
-            feeds = await get_feeds(store)
-            if url not in feeds:
-                log.warning(f"Feed {url} was deleted during posting!")
-                break
-
-            feeds[url]["last_id"] = entry_id
-            await save_feeds(store, feeds)
-            await _flush_user_store(bot)
-
-            if posted:
-                log.debug("[RSS] Posted and saved last_id for %s: %s", url, entry_id)
-            else:
-                log.debug("[RSS] Saved last_id for %s without posting; no joined rooms", url)
+        new_entries = _collect_new_entries(parsed, last_id)
+        await _post_new_entries(
+            bot, store, url, feed_title, feed_link, rooms, new_entries
+        )
 
         await asyncio.sleep(period)
 
@@ -517,8 +635,10 @@ async def burst_recent_entries(bot, feed, room, burst_num):
         entry_link = _extract_entry_link(entry)
         entry_id = _get_entry_id(entry)
 
-        entry_title = html_to_text_with_links(entry_get(entry, "title", "No title"))
-        entry_desc = html_to_text_with_links(entry_get(entry, "description", ""))
+        entry_title = html_to_text_with_links(
+            entry_get(entry, "title", "No title"))
+        entry_desc = html_to_text_with_links(
+            entry_get(entry, "description", ""))
 
         # Resolve and normalize link
         entry_link = _resolve_relative_url(feed_link, entry_link)
@@ -554,7 +674,8 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
     """
     Manage RSS feeds.
 
-    Add/delete/list Feed URLs to your room. The feeds are checked every 20 minutes globally.
+    Add/delete/list Feed URLs to your room. The feeds are checked every
+    20 minutes globally (configurable).
 
     Usage:
     {prefix}rss add <feedurl>
@@ -577,11 +698,13 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
     ):
         room = msg["from"].bare
 
+    # Add feed to room
     if sub == "add":
         if len(args) != 2:
             bot.reply(
                 msg,
-                f"Usage: {config['prefix', ',']}rss add <feedurl> (in a room or MUC DM only)",
+                f"Usage: {config['prefix', ',']
+                          }rss add <feedurl> (in a room or MUC DM only)",
             )
             return
 
@@ -589,77 +712,10 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
             bot.reply(msg, "🔴 RSS add can only be used in a room or MUC DM.")
             return
 
-        url = _normalize_url(args[1])
-        feeds = await get_feeds(store)
-
-        if url not in feeds:
-            try:
-                feed = await fetch_feed(url)
-                title = feed.feed.get("title", url)
-                feed_link = feed.feed.get("link", url)
-
-                # Burst last N (default 5) items to this room
-                burst_num = config.get("max_new_feed_entries", 5)
-                last_id = await burst_recent_entries(bot, feed, room, burst_num)
-
-                # After burst, remember last_id so next poll ignores already-shown history.
-                feeds[url] = {
-                    "title": title,
-                    "link": feed_link,
-                    "period": config.get("rss_global_query_interval", DEFAULT_POLL_INTERVAL),
-                    "rooms": [room],
-                    "last_id": last_id,
-                    "error_count": 0,
-                    "next_retry": 0,
-                }
-
-                await save_feeds(store, feeds)
-                await _flush_user_store(bot)
-                await ensure_task(bot, store, url, feeds[url]["period"])
-
-                log.info(f"[RSS] Added new feed {store}\n\n{feeds}")
-                bot.reply(
-                    msg,
-                    f"✅ Added feed: {title} ({url}) every {feeds[url]['period']}s to {room}",
-                )
-            except Exception as e:
-                log.exception(f"Failed to fetch or parse feed {url}")
-                bot.reply(msg, f"Failed to fetch or parse feed: {e}")
-                return
-        else:
-            if room not in feeds[url]["rooms"]:
-                feeds[url]["rooms"].append(room)
-                await save_feeds(store, feeds)
-                await _flush_user_store(bot)
-
-                log.info(f"[RSS] ADD: {store}\n\n{feeds}")
-                await ensure_task(
-                    bot,
-                    store,
-                    url,
-                    feeds[url]["period"],
-                )
-
-                # Burst most recent N entries to this newly added room.
-                try:
-                    feed = await fetch_feed(url)
-                    burst_num = config.get("max_new_feed_entries", 5)
-                    await burst_recent_entries(bot, feed, room, burst_num)
-                except Exception as e:
-                    log.exception(f"Failed to fetch or parse feed during burst to new room: {url}: {e}")
-
-                bot.reply(
-                    msg,
-                    f"✅ Added room {room} to feed: {feeds[url]['title']} ({url})",
-                )
-            else:
-                bot.reply(
-                    msg,
-                    f"ℹ️ Feed already added for this room: {url}",
-                )
-
+        await _add_feed(bot, msg, args[1], store, room)
         return
 
+    # Delete feed from room
     elif sub == "delete":
         if len(args) != 2:
             bot.reply(msg, "Usage: rss delete <feedurl>")
@@ -672,51 +728,10 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
             )
             return
 
-        url = _normalize_url(args[1])
-        feeds = await get_feeds(store)
-        log.info(f"[RSS] DELETE: {store}\n\n{feeds}")
-
-        if url not in feeds:
-            bot.reply(msg, "Feed not found.")
-            return
-
-        if room in feeds[url]["rooms"]:
-            feeds[url]["rooms"].remove(room)
-
-            if not feeds[url]["rooms"]:
-                # No rooms left, remove feed
-                feeds.pop(url)
-
-                if url in CHECK_TASKS:
-                    CHECK_TASKS[url].cancel()
-                    del CHECK_TASKS[url]
-
-                bot.reply(
-                    msg,
-                    f"🗑 Deleted feed: {url} (no rooms left, feed removed)",
-                )
-            else:
-                await ensure_task(
-                    bot,
-                    store,
-                    url,
-                    feeds[url]["period"],
-                )
-
-                bot.reply(
-                    msg,
-                    f"🗑 Removed this room from feed: {url}",
-                )
-        else:
-            bot.reply(
-                msg,
-                "ℹ️ This room was not subscribed to the feed.",
-            )
-
-        await save_feeds(store, feeds)
-        await _flush_user_store(bot)
+        await _del_feed(bot, msg, args[1], store, room)
         return
 
+    # List all rooms
     elif sub == "list":
         feeds = await get_feeds(store)
 
@@ -743,6 +758,139 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
 
     else:
         bot.reply(msg, "Unknown subcommand. Use add, delete, or list.")
+
+
+# ----------------
+# ADD FEED TO ROOM
+# ----------------
+async def _add_feed(bot, msg, url, store, room):
+    url = _normalize_url(url)
+    feeds = await get_feeds(store)
+
+    if url not in feeds:
+        try:
+            feed = await fetch_feed(url)
+            title = feed.feed.get("title", url)
+            feed_link = feed.feed.get("link", url)
+
+            # Burst last N (default 5) items to this room
+            burst_num = config.get("max_new_feed_entries", 5)
+            last_id = await burst_recent_entries(bot, feed,
+                                                 room, burst_num)
+
+            # After burst, remember last_id so next poll ignores
+            # already-shown history.
+            feeds[url] = {
+                "title": title,
+                "link": feed_link,
+                "period": config.get("rss_global_query_interval",
+                                     DEFAULT_POLL_INTERVAL),
+                "rooms": [room],
+                "last_id": last_id,
+                "error_count": 0,
+                "next_retry": 0,
+            }
+
+            await save_feeds(store, feeds)
+            await _flush_user_store(bot)
+            await ensure_task(bot, store, url, feeds[url]["period"])
+
+            log.info(f"[RSS] Added new feed {store}\n\n{feeds}")
+            bot.reply(
+                msg,
+                f"✅ Added feed: {title} ({url}) every {
+                    feeds[url]['period']}s to {room}",
+            )
+        except Exception as e:
+            log.exception(f"Failed to fetch or parse feed {url}")
+            bot.reply(msg, f"Failed to fetch or parse feed: {e}")
+            return
+    else:
+        if room not in feeds[url]["rooms"]:
+            feeds[url]["rooms"].append(room)
+            await save_feeds(store, feeds)
+            await _flush_user_store(bot)
+
+            log.info(f"[RSS] ADD: {store}\n\n{feeds}")
+            await ensure_task(
+                bot,
+                store,
+                url,
+                feeds[url]["period"],
+            )
+
+            # Burst most recent N entries to this newly added room.
+            try:
+                feed = await fetch_feed(url)
+                burst_num = config.get("max_new_feed_entries", 5)
+                await burst_recent_entries(bot, feed, room, burst_num)
+            except Exception as e:
+                log.exception(
+                    "Failed to fetch or parse feed during burst"
+                    f" to new room: {url}: {e}")
+
+            bot.reply(
+                msg,
+                f"✅ Added room {room} to feed: {
+                    feeds[url]['title']} ({url})",
+            )
+        else:
+            bot.reply(
+                msg,
+                f"ℹ️ Feed already added for this room: {url}",
+            )
+
+    return
+
+
+# -------------------------
+# DELETE RSS FEED FROM ROOM
+# -------------------------
+async def _del_feed(bot, msg, url, store, room):
+    url = _normalize_url(url)
+    feeds = await get_feeds(store)
+    log.info(f"[RSS] DELETE: {store}\n\n{feeds}")
+
+    if url not in feeds:
+        bot.reply(msg, "Feed not found.")
+        return
+
+    if room in feeds[url]["rooms"]:
+        feeds[url]["rooms"].remove(room)
+
+        if not feeds[url]["rooms"]:
+            # No rooms left, remove feed
+            feeds.pop(url)
+
+            if url in CHECK_TASKS:
+                CHECK_TASKS[url].cancel()
+                del CHECK_TASKS[url]
+
+            bot.reply(
+                msg,
+                f"🗑 Deleted feed: {url} (no rooms left, feed removed)",
+            )
+        else:
+            await ensure_task(
+                bot,
+                store,
+                url,
+                feeds[url]["period"],
+            )
+
+            bot.reply(
+                msg,
+                f"🗑 Removed this room from feed: {url}",
+            )
+    else:
+        bot.reply(
+            msg,
+            "ℹ️ This room was not subscribed to the feed.",
+        )
+
+    await save_feeds(store, feeds)
+    await _flush_user_store(bot)
+    return
 
 
 async def on_load(bot):

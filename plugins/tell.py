@@ -37,7 +37,8 @@ TELL_KEY = "TELL"
 PLUGIN_META = {
     "name": "tell",
     "version": "0.2.0",
-    "description": "Store and deliver messages for users when they join a room again.",
+    "description":
+    "Store and deliver messages for users when they join a room again.",
     "category": "utility",
     "requires": ["rooms", "_core"],
 }
@@ -119,7 +120,6 @@ async def tell_cmd(bot, sender_jid, sender_nick, args, msg, is_room):
         bot.reply(msg, "This command is only available in groupchats.")
         return
 
-    raw_args = " ".join(args)
     m = msg["body"].replace(f"{prefix}tell ", "", 1).strip()
     rec_nick, message = parse_nick_and_message(m)
     if not rec_nick or not message:
@@ -129,8 +129,10 @@ async def tell_cmd(bot, sender_jid, sender_nick, args, msg, is_room):
     rec_jids = await get_jids_from_nick_index(bot, rec_nick)
     rec_jid = rec_jids[0] if rec_jids else None
     if not rec_jid:
-        bot.reply(msg, f"Could not find user '{rec_nick}'. (Maybe they never spoke?)")
-        log.info(f"[TELL] Failed to store message for '{rec_nick}' - user not found.")
+        bot.reply(msg, f"Could not find user '{
+                  rec_nick}'. (Maybe they never spoke?)")
+        log.info(f"[TELL] Failed to store message for '{
+                 rec_nick}' - user not found.")
         return
 
     send_jids = await get_jids_from_nick_index(bot, sender_nick)
@@ -146,8 +148,10 @@ async def tell_cmd(bot, sender_jid, sender_nick, args, msg, is_room):
         "timestamp": now,
     }
     await tell_store(bot, rec_jid, payload)
-    bot.reply(msg, f"[TELL] I'll deliver your message to {rec_nick} when they join.")
-    log.info(f"[TELL] Stored message for {rec_nick} ({rec_jid}) from {sender_nick} ({send_jid}): {message}")
+    bot.reply(msg, f"[TELL] I'll deliver your message to {
+              rec_nick} when they join.")
+    log.info(f"[TELL] Stored message for {rec_nick} ({rec_jid}) from {
+             sender_nick} ({send_jid}): {message}")
 
 
 async def deliver_tell_messages(bot, msg):
@@ -155,7 +159,6 @@ async def deliver_tell_messages(bot, msg):
     Handle slixmpp groupchat_presence event and deliver pending messages.
     Event signature is (bot, msg).
     """
-    room = str(msg["from"].bare)
     nick = str(msg["muc"]["nick"])
     rec_jids = await get_jids_from_nick_index(bot, nick)
     rec_jid = rec_jids[0] if rec_jids else None
@@ -168,10 +171,11 @@ async def deliver_tell_messages(bot, msg):
 
     tzinfo = await get_user_tzinfo(bot, rec_jid)
     for entry in messages:
-        when = datetime.datetime.fromtimestamp(entry["timestamp"], pytz.timezone("UTC")).astimezone(
+        w = datetime.datetime.fromtimestamp(entry["timestamp"],
+                                            pytz.timezone("UTC")).astimezone(
             tzinfo
         )
-        timestr = when.strftime("%a, %d %b %H:%M %Z")
+        timestr = w.strftime("%a, %d %b %H:%M %Z")
         await asyncio.sleep(5)  # slight delay to avoid flooding on join
         bot.reply(
             {
@@ -179,10 +183,13 @@ async def deliver_tell_messages(bot, msg):
                 "type": "groupchat",
                 "mucnick": nick,
             },
-            f"[TELL] ({timestr}) {entry['send_nick']} - {entry['recv_nick']}: {entry['message']}",
+            f"[TELL] ({timestr}) {entry['send_nick']
+                                  } - {entry['recv_nick']}: {
+                                  entry['message']}",
             mention=True,
         )
-        log.info(f"[TELL] Delivered tell message to {nick} ({rec_jid}): {entry['message']}")
+        log.info(f"[TELL] Delivered tell message to {
+                 nick} ({rec_jid}): {entry['message']}")
 
 
 def on_load(bot):

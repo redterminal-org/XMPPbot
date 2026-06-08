@@ -139,185 +139,228 @@ async def on_groupchat_message(bot, msg):
 
     text = msg.get("body", "")
     thread_id = msg.get("thread") or msg.get("id")
+    has_xep_0511 = msg.xml.find("{urn:xmpp:ssn}x") is not None
 
-    # Only match URLs in lines that do not start with ">"
-    # and ignore lines between the first ``` and the next ```,
-    # matching anywhere in the line
+    urls = _extract_urls_from_message_text(text)
+    if not urls:
+        return
+
+    for url in urls:
+        await _handle_urlcheck_url(
+            bot=bot,
+            msg=msg,
+            room=room,
+            url=url,
+            thread_id=thread_id,
+            has_xep_0511=has_xep_0511,
+        )
+
+
+def _extract_urls_from_message_text(text):
     lines = []
     in_code_block = False
     codeblock_started = False
+
     for line in text.splitlines():
         if not codeblock_started and "```" in line:
             in_code_block = True
             codeblock_started = True
-            continue  # skip the line with opening ```
+            continue
         if in_code_block and "```" in line:
             in_code_block = False
-            continue  # skip the line with closing ```
+            continue
         if in_code_block:
-            continue  # skip lines inside code block
+            continue
         if not line.lstrip().startswith(">"):
             lines.append(line)
 
     urls = []
     for line in lines:
-        # If the line contains a URL, extract all URLs from the line
-        _urls = URL_RE.findall(line)
-        for url in _urls:
+        for url in URL_RE.findall(line):
             parsed = urlparse(url) if url else None
             if parsed is not None and parsed.scheme in ("http", "https"):
-                # skip reddit links
                 if parsed.netloc.lower().endswith("reddit.com"):
                     continue
-            urls.extend([url])
-    if not urls:
+            urls.append(url)
+
+    return urls
+
+
+async def _handle_urlcheck_url(bot, msg, room, url, thread_id, has_xep_0511):
+    now = datetime.now().timestamp()
+
+    if room not in _url_timestamps:
+        _url_timestamps[room] = {}
+
+    for u in dict(_url_timestamps[room]):
+        if _url_timestamps[room][u] < now - _wait_secs_url:
+            del _url_timestamps[room][u]
+
+    if url in _url_timestamps[room]:
+        log.info(f"[URLCHECK] 🟡 Fetching '{url}' temporary disabled")
+        _url_timestamps[room][url] = now
         return
 
-    has_xep_0511 = msg.xml.find("{urn:xmpp:ssn}x") is not None
+    _url_timestamps[room][url] = now
 
-    for url in urls:
-        # Check if room is in _url_timestamps, if not add it
-        now = datetime.now().timestamp()
-        if room not in _url_timestamps:
-            _url_timestamps[room] = {}
-        # delete all expired URLs
-        for u in dict(_url_timestamps[room]):
-            if _url_timestamps[room][u] < now - _wait_secs_url:
-                del _url_timestamps[room][u]
-        # if URL in _url_timestamps[room], skip it
-        # else add it to _url_timestamps[room] with current timestamp
-        if url in _url_timestamps[room]:
-            log.info(f"[URLCHECK] 🟡 Fetching '{url}' temporary disabled")
-            # update timestamp to extend block
-            _url_timestamps[room][url] = now
-            continue
-        _url_timestamps[room][url] = now
+    try:
+        loop = asyncio.get_running_loop()
+        final_url, status, ctype, title, content_size, mdesc = (
+                await loop.run_in_executor(None, fetch_url_title, url, 5)
+        )
 
+        st = f"(Status: {status})" if status in [200, 403] else ""
+
+        if is_youtube_url(final_url):
+            await _send_youtube_urlcheck_reply(
+                bot=bot,
+                msg=msg,
+                final_url=final_url,
+                title=title,
+                thread_id=thread_id,
+                has_xep_0511=has_xep_0511,
+            )
+            return
+
+        if ctype:
+            is_ok = "text/html" in ctype
+        else:
+            is_ok = False
+
+        if is_ok and title:
+            await _send_html_urlcheck_reply(
+                bot=bot,
+                msg=msg,
+                final_url=final_url,
+                status=status,
+                ctype=ctype,
+                title=title,
+                content_size=content_size,
+                mdesc=mdesc,
+                st=st,
+                thread_id=thread_id,
+                has_xep_0511=has_xep_0511,
+            )
+        elif ctype:
+            return
+
+    except Exception as e:
+        if str(e) == "Too many redirects":
+            bot.reply(
+                msg,
+                f"🟡️ URL not fetched: too many redirects for {url}",
+                mention=False, thread=True, ephemeral=False
+            )
+            log.info(f"[URLCHECK] Too many redirects for URL {url}")
+        else:
+            log.warning(f"[URLCHECK] Failed to fetch URL {url}: {e}")
+
+
+async def _send_youtube_urlcheck_reply(
+    bot, msg, final_url, title, thread_id, has_xep_0511
+):
+    yt_info, title, uploader, length_str, views = (
+            await fetch_youtube_info(final_url)
+    )
+
+    if not yt_info:
+        return
+
+    message = bot.make_message(
+        mto=msg["from"].bare,
+        mbody=html.unescape(yt_info),
+        mtype="groupchat"
+    )
+
+    if thread_id:
         try:
-            # handle up to 3 redirects manually
-            loop = asyncio.get_running_loop()
-            final_url, status, ctype, title, content_size, mdesc = (
-                await loop.run_in_executor(
-                        None, fetch_url_title, url, 5)
+            message["thread"] = thread_id
+        except Exception:
+            pass
+
+    if not has_xep_0511 and not has_xep_0392_link_metadata(msg):
+        try:
+            if title is not None:
+                message["link_metadata"]["title"] = html.unescape(title)
+            message["link_metadata"]["about"] = (
+                f"Uploader: {uploader} - Length: {length_str}"
+                f" - Views: {views}"
+            )
+            if yt_info is not None:
+                message["link_metadata"]["description"] = (
+                        html.unescape(yt_info)
+                )
+            message["link_metadata"]["url"] = final_url
+        except Exception as e:
+            log.warning(
+                "[URLCHECK] Failed to set link metadata for YouTube info: "
+                f"{e}"
             )
 
-            st = f"(Status: {status})" if status in [200, 403] else ""
-            if is_youtube_url(final_url):
-                yt_info, title, uploader, length_str, views = (
-                    await fetch_youtube_info(final_url)
+    if has_xep_0511 or has_xep_0392_link_metadata(msg):
+        for x in list(message.xml.findall("{urn:xmpp:ssn}x")):
+            message.xml.remove(x)
+
+    message.send()
+
+
+async def _send_html_urlcheck_reply(
+    bot,
+    msg,
+    final_url,
+    status,
+    ctype,
+    title,
+    content_size,
+    mdesc,
+    st,
+    thread_id,
+    has_xep_0511,
+):
+    _body = f"[URL] {html.unescape(title)} {st} - ({final_url})"
+
+    if mdesc and isinstance(mdesc, str):
+        desc_lines = [line.strip() for line in mdesc.splitlines()
+                      if line.strip()]
+        short_desc = "\n".join(desc_lines[:2])
+        _body += f"\nDesc: '{html.unescape(short_desc)}'"
+
+    message = bot.make_message(
+        mto=msg["from"].bare,
+        mbody=_body.strip(),
+        mtype="groupchat"
+    )
+
+    if thread_id:
+        try:
+            message["thread"] = thread_id
+        except Exception:
+            pass
+
+        if not has_xep_0511 and not has_xep_0392_link_metadata(msg):
+            try:
+                if title is not None:
+                    message["link_metadata"]["title"] = html.unescape(title)
+                message["link_metadata"]["url"] = final_url
+                message["link_metadata"]["about"] = (
+                    f"Status: {status} - Content-Type: {ctype}"
+                    f" - Size: {content_size}"
                 )
-                if yt_info:
-                    message = bot.make_message(
-                        mto=msg["from"].bare,
-                        mbody=html.unescape(yt_info),
-                        mtype="groupchat"
+                if mdesc is not None:
+                    message["link_metadata"]["description"] = (
+                            html.unescape(mdesc) or ""
                     )
-                    if thread_id:
-                        try:
-                            message["thread"] = thread_id
-                        except Exception:
-                            pass
-                    # Only attach XEP-0511 if not already present
-                    # in the original message
-                    if (not has_xep_0511 and
-                            not has_xep_0392_link_metadata(msg)):
-                        try:
-                            if title is not None:
-                                message["link_metadata"]["title"] = (
-                                    html.unescape(title)
-                                )
-                            message["link_metadata"]["about"] = (
-                                f"Uploader: {uploader} - Length: {length_str}"
-                                f" - Views: {views}"
-                            )
-                            if yt_info is not None:
-                                message["link_metadata"]["description"] = (
-                                    html.unescape(yt_info)
-                                )
-                            message["link_metadata"]["url"] = final_url
-                        except Exception as e:
-                            log.warning(
-                                "[URLCHECK] Failed to set link metadata"
-                                f" for YouTube info: {e}"
-                            )
-
-                if (has_xep_0511 or
-                        has_xep_0392_link_metadata(msg)):
-                    # If original message has XEP-0511,
-                    # don't include YouTube info in the reply text
-                    for x in list(
-                        message.xml.findall("{urn:xmpp:ssn}x")
-                    ):
-                        message.xml.remove(x)
-
-                message.send()
-                continue
-
-            if ctype:
-                is_ok = "text/html" in ctype
-            if is_ok and title:
-                _body = f"[URL] {html.unescape(title)} {st} - ({final_url})"
-                if mdesc and isinstance(mdesc, str):
-                    # Only include the first 2 non-empty lines
-                    # (preserves short descs).
-                    lines = [line.strip() for line in mdesc.splitlines() if line.strip()]
-                    short_desc = "\n".join(lines[:2])
-                    _body += f"\nDesc: '{html.unescape(short_desc)}'"
-                message = bot.make_message(
-                    mto=msg["from"].bare,
-                    mbody=_body.strip(),
-                    mtype="groupchat"
+            except Exception as e:
+                log.warning(
+                    "[URLCHECK] Failed to set link metadata for "
+                    f"URL '{final_url}': {e}"
                 )
-                if thread_id:
-                    try:
-                        message["thread"] = thread_id
-                    except Exception:
-                        pass
-                    # Only attach XEP-0511 if not already present
-                    # in the original message
-                    if (not has_xep_0511 and
-                            not has_xep_0392_link_metadata(msg)):
-                        try:
-                            if title is not None:
-                                message["link_metadata"]["title"] = (
-                                    html.unescape(title)
-                                )
-                            message["link_metadata"]["url"] = final_url
-                            message["link_metadata"]["about"] = (
-                                f"Status: {status} - Content-Type: {ctype}"
-                                f" - Size: {content_size}"
-                            )
-                            if mdesc is not None:
-                                message["link_metadata"]["description"] = (
-                                    html.unescape(mdesc) or ""
-                                )
-                        except Exception as e:
-                            log.warning(
-                                "[URLCHECK] Failed to set link metadata for "
-                                f"URL '{final_url}': {e}"
-                            )
-                    if (has_xep_0511 or
-                            has_xep_0392_link_metadata(msg)):
-                        # If original message has XEP-0511,
-                        # don't include URL info in the reply text
-                        for x in list(
-                            message.xml.findall("{urn:xmpp:ssn}x")
-                        ):
-                            message.xml.remove(x)
 
-                message.send()
-            elif ctype:
-                continue
-        except Exception as e:
-            if str(e) == "Too many redirects":
-                bot.reply(
-                    msg,
-                    f"🟡️ URL not fetched: too many redirects for {url}",
-                    mention=False, thread=True, ephemeral=False
-                )
-                log.info(f"[URLCHECK] Too many redirects for URL {url}")
-            else:
-                log.warning(f"[URLCHECK] Failed to fetch URL {url}: {e}")
+        if has_xep_0511 or has_xep_0392_link_metadata(msg):
+            for x in list(message.xml.findall("{urn:xmpp:ssn}x")):
+                message.xml.remove(x)
+
+    message.send()
 
 
 def strip_html_tags(text):
@@ -374,7 +417,8 @@ def fetch_url_title(url, max_redirects=5):
                 content_size = None
 
             # Handle redirect manually
-            if status in (301, 302, 303, 307, 308) and "Location" in resp.headers:
+            if (status in (301, 302, 303, 307, 308)
+                    and "Location" in resp.headers):
                 url = urljoin(resp.url, resp.headers["Location"])
                 continue
 
@@ -398,7 +442,8 @@ def fetch_url_title(url, max_redirects=5):
                 final_url = resp.url
                 if orig_fragment:
                     parsed_final = urlparse(final_url)
-                    final_url = urlunparse(parsed_final._replace(fragment=orig_fragment))
+                    final_url = urlunparse(
+                        parsed_final._replace(fragment=orig_fragment))
                 return (
                     final_url, status,
                     ctype, title_found, None, desc_found
@@ -407,7 +452,8 @@ def fetch_url_title(url, max_redirects=5):
                 final_url = resp.url
                 if orig_fragment:
                     parsed_final = urlparse(final_url)
-                    final_url = urlunparse(parsed_final._replace(fragment=orig_fragment))
+                    final_url = urlunparse(
+                        parsed_final._replace(fragment=orig_fragment))
                 return (
                     final_url, status, ctype,
                     None, content_size, None
@@ -437,6 +483,29 @@ def extract_html_title_desc(html, is_wikipedia=False):
             break
 
     return title, desc
+
+
+async def _create_length_str(duration):
+    try:
+        td = isodate.parse_duration(duration)
+        total_seconds = int(td.total_seconds())
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours:
+            length_str = f"{hours}h"
+            if minutes:
+                length_str += f"{minutes}m"
+            if seconds:
+                length_str += f"{seconds}s"
+        elif minutes:
+            length_str = f"{minutes}m"
+            if seconds:
+                length_str += f"{seconds}s"
+        else:
+            length_str = f"{seconds}s"
+    except Exception:
+        length_str = duration
+    return length_str
 
 
 async def fetch_youtube_info(url):
@@ -473,25 +542,7 @@ async def fetch_youtube_info(url):
             # Format duration as 1h23m46s, 23m46s, or 46s
             length_str = ""
             if duration:
-                try:
-                    td = isodate.parse_duration(duration)
-                    total_seconds = int(td.total_seconds())
-                    hours, remainder = divmod(total_seconds, 3600)
-                    minutes, seconds = divmod(remainder, 60)
-                    if hours:
-                        length_str = f"{hours}h"
-                        if minutes:
-                            length_str += f"{minutes}m"
-                        if seconds:
-                            length_str += f"{seconds}s"
-                    elif minutes:
-                        length_str = f"{minutes}m"
-                        if seconds:
-                            length_str += f"{seconds}s"
-                    else:
-                        length_str = f"{seconds}s"
-                except Exception:
-                    length_str = duration
+                length_str = await _create_length_str(duration)
             # Format upload date as "DD Mon YYYY" if possible
             if upload_date:
                 try:

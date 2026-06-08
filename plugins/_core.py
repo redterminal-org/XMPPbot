@@ -20,7 +20,6 @@ from typing import Any, Awaitable, Callable, Optional
 from utils.command import Role
 
 from plugins.rooms import JOINED_ROOMS
-from plugins.vcard import get_user_vcard
 
 PLUGIN_META = {
     "name": "_core",
@@ -32,30 +31,6 @@ PLUGIN_META = {
 }
 
 log = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------
-# Expose get_user_vcard as get_profile for easier access across plugins
-# Usage:
-#   vcard = await core.get_profile(bot, msg, jid)
-# Parameters:
-#   - bot: The bot instance (for database access)
-#   - msg: The message object (for context and replying)
-#   - jid: The JID of the user whose profile to fetch
-# Fields:
-#   - vcard['FN'] - Full name
-#   - vcard['NICKNAME'] - Nickname
-#   - vcard['BDAY'] - Birthday
-#   - vcard['URL'] - URLs
-#   - vcard['ORG'] - Organization
-#   - vcard['NOTE'] - Notes
-#   - vcard['EMAIL'] - Emails
-#   - vcard['LOCALITY'] - Locality
-#   - vcard['REGION'] - Region
-#   - vcard['COUNTRY'] - Country
-#   - vcard['TZ'] - Timezone
-# ----------------------------------------------------------------------
-get_profile = get_user_vcard
 
 
 # ---------------------------------------------------------------------
@@ -217,14 +192,16 @@ async def _get_user_timezone(bot, timezone_jid: str | None) -> str:
 
         if timezone_name:
             log.warning(
-                "[CORE] Invalid vCard TIMEZONE for %s: %s; falling back to UTC",
+                "[CORE] Invalid vCard TIMEZONE for %s: %s; falling back to"
+                " UTC",
                 timezone_jid,
                 timezone_name,
             )
 
     except Exception as exc:
         log.warning(
-            "[CORE] Could not read vCard TIMEZONE for %s: %s; falling back to UTC",
+            "[CORE] Could not read vCard TIMEZONE for %s: %s; falling back to"
+            " UTC",
             timezone_jid,
             exc,
         )
@@ -717,6 +694,9 @@ async def handle_room_toggle_command(
     - storage="dict": {room_jid: True}
     - storage="list": {list_field: [room_jid, ...]}
     """
+    # -----------------------------------------------------------
+    # DELETED STORAGE TYPE 'list' to reduce cyclomatic complexity
+    # -----------------------------------------------------------
     if not args:
         return False
 
@@ -766,48 +746,6 @@ async def handle_room_toggle_command(
             return True
 
         state.pop(room_jid, None)
-        await store.set_global(key, state)
-
-        bot.reply(msg, _format_disabled(label))
-        log.info("%s Room %s disabled", log_prefix, room_jid)
-        return True
-
-    if storage == "list":
-        state = await store.get_global(key, default={list_field: []})
-
-        if not isinstance(state, dict):
-            state = {list_field: []}
-
-        rooms = state.get(list_field, [])
-
-        if not isinstance(rooms, list):
-            rooms = []
-
-        enabled = room_jid in rooms
-
-        if subcmd == "status":
-            bot.reply(msg, _format_status(label, enabled))
-            return True
-
-        if subcmd == "on":
-            if enabled:
-                bot.reply(msg, _format_already_enabled(label))
-                return True
-
-            rooms.append(room_jid)
-            state[list_field] = rooms
-            await store.set_global(key, state)
-
-            bot.reply(msg, _format_enabled(label))
-            log.info("%s Room %s enabled", log_prefix, room_jid)
-            return True
-
-        if not enabled:
-            bot.reply(msg, _format_already_disabled(label))
-            return True
-
-        rooms.remove(room_jid)
-        state[list_field] = rooms
         await store.set_global(key, state)
 
         bot.reply(msg, _format_disabled(label))

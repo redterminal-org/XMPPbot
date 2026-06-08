@@ -25,7 +25,8 @@ class PluginRuntimeStore:
     Key characteristics:
     - Read-through cache: data is loaded from the database on first access.
     - Write-behind cache: all mutations are applied in-memory and marked dirty.
-    - No immediate database writes: persistence happens later via UserManager.flush_*.
+    - No immediate database writes: persistence happens later via
+      UserManager.flush_*.
     - Per-plugin isolation: each plugin only accesses its own namespace inside
       the shared JSON document.
 

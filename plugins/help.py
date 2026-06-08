@@ -193,12 +193,13 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
       {prefix}help {prefix}<command> - Help for a specific command of a plugin
     """
 
-    prefix = config.get("prefix", ",")
+    prefix = bot.prefix
 
     # Check, if command is allowed in this context (room or MUC PM)
     enabled_rooms = await _get_enabled_rooms(bot, HELP_KEY, "help")
     if is_room and msg["from"].bare not in enabled_rooms:
-        bot.reply(msg, "ℹ️ Help is only available via private message in this room.")
+        bot.reply(
+            msg, "ℹ️ Help is only available via private message in this room.")
         return
 
     query = " ".join(args).strip()
@@ -216,85 +217,100 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
     jid = str(slixmpp.JID(jid))
 
     # determine sender role
-    user_role = await bot.get_user_role(jid, room)
+    role = await bot.get_user_role(jid, room)
 
-    pm = bot.bot_plugins
-
-    # --------------------------------------------------
     # GENERAL HELP
-    # --------------------------------------------------
-
     if not query:
-        doc = cmd_help.__doc__.format(prefix=bot.prefix)
-
-        lines = [f"📚 Envsbot - Version {bot.version or 'unknown'}", ""]
-        lines += [f"{doc}"]
-        lines += ["📦 Available plugins", ""]
-
-        for name, module in sorted(pm.plugins.items()):
-
-            # hide internal plugins for non-admin users
-            if name.startswith("_") and user_role > Role.ADMIN:
-                continue
-
-            # collect commands visible to this user
-            commands = _commands_for_plugin(bot, name, user_role)
-
-            # hide plugins with no visible commands for non-admin users
-            if user_role > Role.ADMIN and not commands:
-                continue
-
-            doc = _first_line(module.__doc__) or ""
-            lines.append(f"•  {name} — {doc}")
-
-        bot.reply(msg, lines)
+        bot.reply(msg, await _general(bot, role))
         return
 
-    # --------------------------------------------------
     # COMMAND HELP
-    # --------------------------------------------------
-
     if query.startswith(prefix):
 
-        cmd_text = query[len(prefix):].strip()
-
-        cmd_obj, _ = resolve_command(cmd_text)
-
-        if not cmd_obj:
-            bot.reply(msg, "🟡️ Unknown command.")
-            return
-
-        if not check_permission(user_role, cmd_obj):
-            bot.reply(msg, "⛔ You do not have permission to use this command.")
-            return
-
-        doc = _clean_doc(cmd_obj.handler.__doc__, prefix)
-
-        lines = [
-            f"📖 Command: {prefix}{cmd_obj.name}",
-            ""
-        ]
-
-        if doc:
-            lines.append(doc)
-
-        bot.reply(msg, lines)
+        bot.reply(msg, await _command(bot, query, role))
         return
 
-    # --------------------------------------------------
     # PLUGIN HELP
-    # --------------------------------------------------
+    bot.reply(msg, await _plugin(bot, query, role))
+    return
 
+
+# --------------------------------------------------
+# GENERAL HELP
+# --------------------------------------------------
+async def _general(bot, role: Role) -> list:
+    pm = bot.bot_plugins
+    doc = cmd_help.__doc__.format(prefix=bot.prefix)
+
+    lines = [f"📚 Envsbot - Version {bot.version or 'unknown'}", ""]
+    lines += [f"{doc}"]
+    lines += ["📦 Available plugins", ""]
+
+    for name, module in sorted(pm.plugins.items()):
+
+        # hide internal plugins for non-admin users
+        if name.startswith("_") and role > Role.ADMIN:
+            continue
+
+        # collect commands visible to this user
+        commands = _commands_for_plugin(bot, name, role)
+
+        # hide plugins with no visible commands for non-admin users
+        if role > Role.ADMIN and not commands:
+            continue
+
+        doc = _first_line(module.__doc__) or ""
+        lines.append(f"•  {name} — {doc}")
+
+    return lines
+
+
+# --------------------------------------------------
+# COMMAND HELP
+# --------------------------------------------------
+async def _command(bot, query: str, role: Role) -> list:
+    lines = []
+    cmd_text = query[len(bot.prefix):].strip()
+
+    cmd_obj, _ = resolve_command(cmd_text)
+
+    if not cmd_obj:
+        lines.append("🟡️ Unknown command.")
+        return lines
+
+    if not check_permission(role, cmd_obj):
+        lines.append("⛔ You do not have permission to use this command.")
+        return lines
+
+    doc = _clean_doc(cmd_obj.handler.__doc__, bot.prefix)
+
+    lines = [
+        f"📖 Command: {bot.prefix}{cmd_obj.name}",
+        ""
+    ]
+
+    if doc:
+        lines.append(doc)
+
+    return lines
+
+
+# --------------------------------------------------
+# PLUGIN HELP
+# --------------------------------------------------
+async def _plugin(bot, query: str, role: Role) -> list:
+    lines = []
+    pm = bot.bot_plugins
     plugin = query.lower()
 
     # hide internal plugins for non-admin users
-    if plugin.startswith("_") and user_role > Role.ADMIN:
-        bot.reply(msg, "🟡️ Unknown plugin.")
-        return
+    if plugin.startswith("_") and role > Role.ADMIN:
+        lines.append("🟡️ Unknown plugin.")
+        return lines
 
     if plugin not in pm.plugins:
-        bot.reply(msg, "🟡️ Unknown plugin.")
-        return
+        lines.append("🟡️ Unknown plugin.")
+        return lines
 
     module = pm.plugins[plugin]
 
@@ -303,7 +319,7 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
         ""
     ]
 
-    module_doc = _clean_doc(module.__doc__, prefix)
+    module_doc = _clean_doc(module.__doc__, bot.prefix)
 
     if module_doc:
         lines.append(module_doc)
@@ -311,15 +327,14 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
 
     lines.append("Commands:")
 
-    commands = _commands_for_plugin(bot, plugin, user_role)
+    commands = _commands_for_plugin(bot, plugin, role)
 
     if not commands:
         lines.append("No commands available for your role.")
     else:
         for cmd in commands:
-            lines.append(_format_command(cmd, prefix))
-
-    bot.reply(msg, lines)
+            lines.append(_format_command(cmd, bot.prefix))
+    return lines
 
 
 @command("help inroom", role=Role.USER, aliases=["h inroom"])
@@ -347,5 +362,6 @@ async def help_inroom_command(bot, sender_jid, sender_nick,
     if handled:
         return
 
-    bot.reply(msg, f"Usage: {config.get('prefix', ',')}help inroom <on|off|status>")
+    bot.reply(msg, f"Usage: {config.get('prefix', ',')
+                             }help inroom <on|off|status>")
     return
