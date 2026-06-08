@@ -325,6 +325,66 @@ async def broadcast_comic_to_subscribed_rooms(bot, comic: dict[str, Any]):
             log.warning("[XKCD] Room %s not in JOINED_ROOMS", room_id)
 
 
+async def _persist_xkcd_index(store, search_index):
+    await store.set_global(XKCD_INDEX_KEY, search_index)
+
+
+def _normalize_xkcd_index(search_index):
+    if not isinstance(search_index, dict):
+        return {}
+    return search_index
+
+
+def _expected_xkcd_count(current_max_id):
+    return current_max_id - len(
+        {comic_id for comic_id in MISSING_COMIC_IDS
+            if comic_id <= current_max_id}
+    )
+
+
+def _xkcd_should_skip_comic(comic_id, search_index):
+    return comic_id in MISSING_COMIC_IDS or str(comic_id) in search_index
+
+
+async def _index_single_xkcd_comic(
+    comic_id,
+    session,
+    store,
+    search_index,
+    indexed,
+    failed,
+):
+    try:
+        comic = await get_xkcd(comic_id, session=session)
+        if comic:
+            search_index[str(comic_id)] = {
+                "title": comic.get("title", ""),
+                "alt": comic.get("alt", ""),
+            }
+            indexed += 1
+
+            if indexed % 200 == 0:
+                await _persist_xkcd_index(store, search_index)
+                log.info("[XKCD] Indexed %s new comics...", indexed)
+
+            await asyncio.sleep(INDEX_REQUEST_DELAY_SECONDS)
+        else:
+            failed += 1
+            log.debug("[XKCD] Comic #%s could not be fetched", comic_id)
+
+    except asyncio.CancelledError:
+        log.info("[XKCD] Index building cancelled after %s new comics",
+                 indexed)
+        await _persist_xkcd_index(store, search_index)
+        raise
+
+    except Exception as exc:
+        log.debug("[XKCD] Failed to index comic #%s: %s", comic_id, exc)
+        failed += 1
+
+    return indexed, failed
+
+
 async def build_full_index(bot):
     """Build full search index of all XKCD comics."""
     try:
@@ -337,15 +397,12 @@ async def build_full_index(bot):
                 return
 
             store = await get_xkcd_store(bot)
-            search_index = await store.get_global(XKCD_INDEX_KEY, default={})
-            if not isinstance(search_index, dict):
-                search_index = {}
+            search_index = _normalize_xkcd_index(
+                await store.get_global(XKCD_INDEX_KEY, default={})
+            )
 
             current_max_id = int(latest.get("num", 0) or 0)
-            expected_count = current_max_id - len(
-                {comic_id for comic_id in MISSING_COMIC_IDS
-                    if comic_id <= current_max_id}
-            )
+            expected_count = _expected_xkcd_count(current_max_id)
 
             if search_index and len(search_index) >= expected_count:
                 log.info(
@@ -366,47 +423,19 @@ async def build_full_index(bot):
             failed = 0
 
             for comic_id in range(1, current_max_id + 1):
-                if comic_id in MISSING_COMIC_IDS:
+                if _xkcd_should_skip_comic(comic_id, search_index):
                     continue
 
-                if str(comic_id) in search_index:
-                    continue
+                indexed, failed = await _index_single_xkcd_comic(
+                    comic_id,
+                    session,
+                    store,
+                    search_index,
+                    indexed,
+                    failed,
+                )
 
-                try:
-                    comic = await get_xkcd(comic_id, session=session)
-                    if comic:
-                        search_index[str(comic_id)] = {
-                            "title": comic.get("title", ""),
-                            "alt": comic.get("alt", ""),
-                        }
-                        indexed += 1
-
-                        if indexed % 200 == 0:
-                            await store.set_global(XKCD_INDEX_KEY,
-                                                   search_index)
-                            log.info("[XKCD] Indexed %s new comics...",
-                                     indexed)
-
-                        await asyncio.sleep(INDEX_REQUEST_DELAY_SECONDS)
-                    else:
-                        failed += 1
-                        log.debug("[XKCD] Comic #%s could not be fetched",
-                                  comic_id)
-
-                except asyncio.CancelledError:
-                    log.info(
-                        "[XKCD] Index building cancelled after %s new comics",
-                        indexed,
-                    )
-                    await store.set_global(XKCD_INDEX_KEY, search_index)
-                    raise
-
-                except Exception as exc:
-                    log.debug("[XKCD] Failed to index comic #%s: %s",
-                              comic_id, exc)
-                    failed += 1
-
-            await store.set_global(XKCD_INDEX_KEY, search_index)
+            await _persist_xkcd_index(store, search_index)
             log.info(
                 "[XKCD] ✅ Search index complete! Added %s comics (%s failed)",
                 indexed,
