@@ -3,6 +3,7 @@ class DummyXML:
     def findall(self, *args, **kwargs):
         return []
 
+
 class PresenceStub(dict):
     """
     A test double for a Slixmpp Presence stanza that supports both
@@ -11,6 +12,7 @@ class PresenceStub(dict):
         p = PresenceStub(from_=jid_obj, muc=muc_obj, type="available")
         # use p["from"], p.from_, p.xml, p["xml"], etc.
     """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Populate both key and attribute for every kwarg

@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock
 
+
 @pytest.mark.asyncio
 async def test_asyncmock_warning():
     async def my_coro(x, y): return [x, y]

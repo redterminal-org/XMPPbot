@@ -1,15 +1,11 @@
-import asyncio
+from database.users import PluginRuntimeStore
 import json
 import logging
-import types
 import pytest
-import sys
 
 pytestmark = pytest.mark.asyncio
 # (pytest-asyncio required)
 
-from database.users import PluginRuntimeStore
-from database.manager import DatabaseManager  # <-- Fixed import
 
 # Patch logging to silence noisy logs
 logging.getLogger("plugins.users").setLevel(logging.CRITICAL)
@@ -18,24 +14,31 @@ logging.getLogger("plugins.users").setLevel(logging.CRITICAL)
 # Mock database and helpers
 # --------------------------
 
+
 class DummyCursor:
     def __init__(self, row):
         self.row = row
         self._iterated = False
+
     async def fetchone(self):
         return self.row
+
     async def fetchall(self):
         return [self.row] if self.row else []
+
     async def __aenter__(self):
         return self
+
     async def __aexit__(self, exc_type, exc, tb):
         pass
+
 
 class DummyDB:
     def __init__(self):
         self.data = {}
         self.last_updated = {}
         self.execute_calls = []
+
     async def execute(self, query, params):
         self.execute_calls.append((query, params))
         # For SELECT "users_runtime" queries:
@@ -51,6 +54,7 @@ class DummyDB:
         # For UPDATE/INSERT operations, just record and pretend to accept.
         return DummyCursor(None)
 
+
 class DummyUM:
     def __init__(self):
         self.db = DummyDB()
@@ -62,13 +66,16 @@ class DummyUM:
 # Fixtures
 # --------------------------
 
+
 @pytest.fixture
 def dummy_um():
     return DummyUM()
 
+
 @pytest.fixture
 def plugin_store(dummy_um):
     return PluginRuntimeStore(dummy_um, "test_plugin")
+
 
 def make_json_blob(plugin_name, value):
     """helper for plugin store layout"""
@@ -77,6 +84,7 @@ def make_json_blob(plugin_name, value):
 # --------------------------
 # Tests
 # --------------------------
+
 
 @pytest.mark.asyncio
 async def test_load_from_db_ok(plugin_store, dummy_um):
@@ -92,12 +100,14 @@ async def test_load_from_db_ok(plugin_store, dummy_um):
     assert loaded["plugins"][plugin_store.plugin_name] == value
     assert dummy_um._runtime_meta[jid] == "2021-03-11T11:11:11"
 
+
 @pytest.mark.asyncio
 async def test_load_from_db_blank(plugin_store, dummy_um):
     jid = "unknown@domain"
     loaded = await plugin_store._load_from_db(jid)
     assert loaded == {"plugins": {}}
     assert dummy_um._runtime_meta[jid] is None
+
 
 @pytest.mark.asyncio
 async def test_load_from_db_decoding_error(plugin_store, dummy_um, caplog):
@@ -109,6 +119,7 @@ async def test_load_from_db_decoding_error(plugin_store, dummy_um, caplog):
         assert loaded == {"plugins": {}}
         # Should not raise, but log failure
 
+
 @pytest.mark.asyncio
 async def test_ensure_cache_creates_structure(plugin_store, dummy_um):
     jid = "abc@domain"
@@ -116,6 +127,7 @@ async def test_ensure_cache_creates_structure(plugin_store, dummy_um):
     plugin_store._ensure_cache(jid)
     assert jid in dummy_um._runtime_cache
     assert "plugins" in dummy_um._runtime_cache[jid]
+
 
 @pytest.mark.asyncio
 async def test_get_and_set(plugin_store, dummy_um):
@@ -128,6 +140,7 @@ async def test_get_and_set(plugin_store, dummy_um):
     await plugin_store.set(jid, "foo", "bar")
     assert await plugin_store.get(jid, "foo") == "bar"
 
+
 @pytest.mark.asyncio
 async def test_set_and_get(plugin_store, dummy_um):
     jid = "u@d"
@@ -136,6 +149,7 @@ async def test_set_and_get(plugin_store, dummy_um):
     assert v == 123
     # Should register as dirty
     assert jid in dummy_um._dirty_runtime
+
 
 @pytest.mark.asyncio
 async def test_delete(plugin_store, dummy_um):
@@ -148,12 +162,15 @@ async def test_delete(plugin_store, dummy_um):
     assert val is None
     assert await plugin_store.get(jid, "keep") == 1
 
+
 @pytest.mark.asyncio
 async def test_default_value(plugin_store, dummy_um):
     jid = "def@domain"
-    # PluginRuntimeStore.get does not take default=, will return None if not set
+    # PluginRuntimeStore.get does not take default=, will return None if
+    # not set
     result = await plugin_store.get(jid, "notset")
     assert result is None
+
 
 @pytest.mark.asyncio
 async def test_global(plugin_store, dummy_um):
@@ -165,6 +182,7 @@ async def test_global(plugin_store, dummy_um):
     v2 = await plugin_store.get_global("globkey")
     assert v2 is None
 
+
 @pytest.mark.asyncio
 async def test_set_and_get_multiple_fields(plugin_store, dummy_um):
     jid = "multi@domain"
@@ -173,6 +191,7 @@ async def test_set_and_get_multiple_fields(plugin_store, dummy_um):
     for field, exp in [("foo", 1), ("bar", 2)]:
         v = await plugin_store.get(jid, field)
         assert v == exp
+
 
 @pytest.mark.asyncio
 async def test_dirty_flag_on_set_and_delete(plugin_store, dummy_um):
@@ -183,11 +202,13 @@ async def test_dirty_flag_on_set_and_delete(plugin_store, dummy_um):
     await plugin_store.set(jid, "x", None)
     assert jid in dummy_um._dirty_runtime
 
+
 @pytest.mark.asyncio
 async def test_delete_field_nop(plugin_store, dummy_um):
     jid = "noop@domain"
     await plugin_store.set(jid, "notset", None)  # should not fail
     # Should not throw or error
+
 
 @pytest.mark.asyncio
 async def test_global_does_not_affect_user(plugin_store, dummy_um):
@@ -200,12 +221,14 @@ async def test_global_does_not_affect_user(plugin_store, dummy_um):
     assert v1 == 12
     assert v2 == 99
 
+
 @pytest.mark.asyncio
 async def test_local_global_keys_dont_leak(plugin_store, dummy_um):
     # Set a jid-specific key, ensure it doesn't appear in global
     await plugin_store.set("user@else", "mykey", 42)
     g = await plugin_store.get_global("mykey")
     assert g is None
+
 
 @pytest.mark.asyncio
 async def test_set_json_value(plugin_store, dummy_um):
@@ -214,6 +237,7 @@ async def test_set_json_value(plugin_store, dummy_um):
     await plugin_store.set(jid, "blob", val)
     got = await plugin_store.get(jid, "blob")
     assert got == val
+
 
 @pytest.mark.asyncio
 async def test_no_unintended_attr(plugin_store):

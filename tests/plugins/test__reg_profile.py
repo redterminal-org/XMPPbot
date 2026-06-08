@@ -1,6 +1,5 @@
 import pytest
 import io
-import os
 import types
 import builtins
 
@@ -101,7 +100,8 @@ async def test_update_vcard_py_missing(monkeypatch):
     log_msgs = []
 
     monkeypatch.setattr(_reg_profile.os.path, "exists", lambda p: False)
-    monkeypatch.setattr(_reg_profile.log, "warning", lambda msg: log_msgs.append(msg))
+    monkeypatch.setattr(_reg_profile.log, "warning",
+                        lambda msg: log_msgs.append(msg))
 
     bot = object()
 
@@ -116,8 +116,10 @@ async def test_update_vcard_import_error(monkeypatch, tmp_path):
     vcard_py.write_text("raise Exception('fail')")
 
     monkeypatch.setattr(_reg_profile.os.path, "exists", lambda p: True)
-    monkeypatch.setattr(_reg_profile.os.path, "abspath", lambda p: str(vcard_py.parent))
-    monkeypatch.setattr(_reg_profile.os.path, "dirname", lambda p: str(vcard_py.parent))
+    monkeypatch.setattr(_reg_profile.os.path, "abspath",
+                        lambda p: str(vcard_py.parent))
+    monkeypatch.setattr(_reg_profile.os.path, "dirname",
+                        lambda p: str(vcard_py.parent))
 
     import importlib.util
 
@@ -152,8 +154,10 @@ async def test_update_vcard_not_str(monkeypatch, tmp_path):
     vcard_py.write_text("VCARD = 12345")
 
     monkeypatch.setattr(_reg_profile.os.path, "exists", lambda p: True)
-    monkeypatch.setattr(_reg_profile.os.path, "abspath", lambda p: str(vcard_py.parent))
-    monkeypatch.setattr(_reg_profile.os.path, "dirname", lambda p: str(vcard_py.parent))
+    monkeypatch.setattr(_reg_profile.os.path, "abspath",
+                        lambda p: str(vcard_py.parent))
+    monkeypatch.setattr(_reg_profile.os.path, "dirname",
+                        lambda p: str(vcard_py.parent))
 
     import importlib.util
 
@@ -178,7 +182,8 @@ async def test_update_vcard_not_str(monkeypatch, tmp_path):
 
     await _reg_profile.update_vcard(object())
 
-    assert any("VCARD variable in vcard.py is not a string" in m for m in error_msgs)
+    assert any(
+        "VCARD variable in vcard.py is not a string" in m for m in error_msgs)
 
 
 @pytest.mark.asyncio
@@ -189,8 +194,10 @@ async def test_update_vcard_no_change(monkeypatch, tmp_path):
 
     # patch file system lookups
     monkeypatch.setattr(_reg_profile.os.path, "exists", lambda p: True)
-    monkeypatch.setattr(_reg_profile.os.path, "abspath", lambda p: str(vcard_py.parent))
-    monkeypatch.setattr(_reg_profile.os.path, "dirname", lambda p: str(vcard_py.parent))
+    monkeypatch.setattr(_reg_profile.os.path, "abspath",
+                        lambda p: str(vcard_py.parent))
+    monkeypatch.setattr(_reg_profile.os.path, "dirname",
+                        lambda p: str(vcard_py.parent))
 
     import importlib.util
 
@@ -230,8 +237,10 @@ async def test_update_vcard_success(monkeypatch, tmp_path):
     vcard_py.write_text(f"VCARD = '''{vcard_text}'''")
 
     monkeypatch.setattr(_reg_profile.os.path, "exists", lambda p: True)
-    monkeypatch.setattr(_reg_profile.os.path, "abspath", lambda p: str(vcard_py.parent))
-    monkeypatch.setattr(_reg_profile.os.path, "dirname", lambda p: str(vcard_py.parent))
+    monkeypatch.setattr(_reg_profile.os.path, "abspath",
+                        lambda p: str(vcard_py.parent))
+    monkeypatch.setattr(_reg_profile.os.path, "dirname",
+                        lambda p: str(vcard_py.parent))
 
     import importlib.util
 
@@ -296,7 +305,8 @@ async def test_update_vcard_success(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_update_avatar_all_paths(monkeypatch, tmp_path):
-    # Cover avatar_path missing, not exists, bad type, unchanged, error, success
+    # Cover avatar_path missing, not exists, bad type, unchanged,
+    # error, success
 
     class AvatarBot(dict):
         def __init__(self, plugins):
@@ -490,8 +500,10 @@ async def test_setup_profile_user_entry(monkeypatch):
 
     wrote = []
 
-    monkeypatch.setattr(_reg_profile, "update_vcard", lambda bot: _awaitable(None))
-    monkeypatch.setattr(_reg_profile, "update_avatar", lambda bot: _awaitable(None))
+    monkeypatch.setattr(_reg_profile, "update_vcard",
+                        lambda bot: _awaitable(None))
+    monkeypatch.setattr(_reg_profile, "update_avatar",
+                        lambda bot: _awaitable(None))
     monkeypatch.setattr(
         _reg_profile,
         "log",
@@ -526,8 +538,10 @@ async def test_setup_profile_user_created(monkeypatch):
         boundjid = type("bjid", (), {"bare": "jidval"})()
         db = types.SimpleNamespace(users=FakeDBUsers())
 
-    monkeypatch.setattr(_reg_profile, "update_vcard", lambda bot: _awaitable(None))
-    monkeypatch.setattr(_reg_profile, "update_avatar", lambda bot: _awaitable(None))
+    monkeypatch.setattr(_reg_profile, "update_vcard",
+                        lambda bot: _awaitable(None))
+    monkeypatch.setattr(_reg_profile, "update_avatar",
+                        lambda bot: _awaitable(None))
     monkeypatch.setattr(
         _reg_profile,
         "log",
@@ -562,8 +576,10 @@ async def test_setup_profile_user_create_error(monkeypatch):
         boundjid = type("bjid", (), {"bare": "jidval"})()
         db = types.SimpleNamespace(users=FakeDBUsers())
 
-    monkeypatch.setattr(_reg_profile, "update_vcard", lambda bot: _awaitable(None))
-    monkeypatch.setattr(_reg_profile, "update_avatar", lambda bot: _awaitable(None))
+    monkeypatch.setattr(_reg_profile, "update_vcard",
+                        lambda bot: _awaitable(None))
+    monkeypatch.setattr(_reg_profile, "update_avatar",
+                        lambda bot: _awaitable(None))
     monkeypatch.setattr(
         _reg_profile,
         "log",
@@ -598,7 +614,8 @@ async def test_on_load_and_on_ready(monkeypatch):
         boundjid = type("Jid", (), {"bare": "jidval"})()
         db = types.SimpleNamespace(users=DummyUsers())
 
-    monkeypatch.setattr(_reg_profile, "setup_profile", lambda bot: _awaitable(None))
+    monkeypatch.setattr(_reg_profile, "setup_profile",
+                        lambda bot: _awaitable(None))
 
     await _reg_profile.on_load(Bot())
 
@@ -607,7 +624,8 @@ async def test_on_load_and_on_ready(monkeypatch):
     assert "xep_0153" in called
     assert "xep_0163" in called
 
-    monkeypatch.setattr(_reg_profile, "config", {"timezone": "Europe/Stockholm"})
+    monkeypatch.setattr(_reg_profile, "config", {
+                        "timezone": "Europe/Stockholm"})
 
     await _reg_profile.on_ready(Bot())
 

@@ -1,8 +1,7 @@
 import pytest
-import tempfile
 import os
-import shutil
 import asyncio
+
 
 @pytest.fixture(scope='session')
 def event_loop():

@@ -20,14 +20,16 @@ def test_role_enum_and_str():
 
 
 @pytest.mark.parametrize("val,expected", [
-    (1, Role.OWNER), (80, Role.USER), (90, Role.NEW), (42, Role.USER), (999, Role.USER)
+    (1, Role.OWNER), (80, Role.USER),
+    (90, Role.NEW), (42, Role.USER), (999, Role.USER)
 ])
 def test_role_from_int_various(val, expected):
     assert role_from_int(val) == expected
 
 
 @pytest.mark.parametrize("role,result", [
-    (Role.BANNED, True), (Role.NONE, False), (Role.ADMIN, False), (Role.USER, False)
+    (Role.BANNED, True), (Role.NONE, False),
+    (Role.ADMIN, False), (Role.USER, False)
 ])
 def test_is_banned_for_various_roles(role, result):
     assert is_banned(role) == result

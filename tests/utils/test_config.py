@@ -6,7 +6,8 @@ import pytest
 import utils.config as config_mod
 
 
-def test_load_config_returns_defaults_when_missing_and_not_strict(tmp_path, monkeypatch):
+def test_load_config_returns_defaults_when_missing_and_not_strict(tmp_path,
+                                                                  monkeypatch):
     monkeypatch.setattr(config_mod, "BASE_DIR", tmp_path)
 
     result = config_mod.load_config()
@@ -43,7 +44,8 @@ def test_load_config_loads_json(tmp_path, monkeypatch):
         assert result[k] == v
 
 
-def test_load_config_with_partial_override_when_not_strict(tmp_path, monkeypatch):
+def test_load_config_with_partial_override_when_not_strict(tmp_path,
+                                                           monkeypatch):
     data = {"prefix": ";"}
     (tmp_path / "config.json").write_text(json.dumps(data))
 
@@ -120,7 +122,8 @@ def test_validate_startup_config_accepts_valid_config():
         ("nick", "", "nick: must not be empty"),
     ],
 )
-def test_validate_startup_config_rejects_empty_required_strings(key, value, expected):
+def test_validate_startup_config_rejects_empty_required_strings(key, value,
+                                                                expected):
     cfg = {
         "jid": "bot@example.org",
         "password": "secret",
@@ -215,7 +218,8 @@ def test_validate_config_rejects_wrong_optional_types():
 
 def test_exit_on_config_error_exits(capsys):
     with pytest.raises(SystemExit) as exc:
-        config_mod.exit_on_config_error(config_mod.ConfigError("broken config"))
+        config_mod.exit_on_config_error(
+            config_mod.ConfigError("broken config"))
 
     assert exc.value.code == 1
     err = capsys.readouterr().err
@@ -244,6 +248,7 @@ def test_setup_logging_creates_log_dir_and_file(tmp_path, monkeypatch):
         h.level == logging.WARNING or h.level == logging.NOTSET
         for h in logger.handlers
     )
+
 
 def test_validate_startup_config_rejects_invalid_bot_jid():
     cfg = {
@@ -386,7 +391,8 @@ def test_validate_config_rejects_non_positive_rss_interval():
     with pytest.raises(config_mod.ConfigError) as exc:
         config_mod.validate_config(cfg, require_required_keys=True)
 
-    assert "rss_global_query_interval: must be greater than 0" in str(exc.value)
+    assert "rss_global_query_interval: must be greater than 0" in str(
+        exc.value)
 
 
 def test_validate_config_rejects_negative_max_new_feed_entries():
@@ -426,7 +432,8 @@ def test_collect_config_warnings_for_missing_avatar(tmp_path, monkeypatch):
 
     warnings = config_mod.collect_config_warnings(cfg)
 
-    assert any("avatar: file does not exist" in warning for warning in warnings)
+    assert any("avatar: file does not exist"
+               in warning for warning in warnings)
 
 
 def test_collect_config_warnings_for_avatar_extension_mismatch():
@@ -437,10 +444,13 @@ def test_collect_config_warnings_for_avatar_extension_mismatch():
 
     warnings = config_mod.collect_config_warnings(cfg)
 
-    assert any("file extension does not match avatar_type image/png" in warning for warning in warnings)
+    assert any(
+        "file extension does not match avatar_type image/png"
+        in warning for warning in warnings)
 
 
-def test_validate_startup_config_prints_avatar_warnings(tmp_path, monkeypatch, capsys):
+def test_validate_startup_config_prints_avatar_warnings(tmp_path, monkeypatch,
+                                                        capsys):
     monkeypatch.setattr(config_mod, "BASE_DIR", tmp_path)
 
     cfg = {

@@ -34,7 +34,9 @@ def patch_config(monkeypatch):
 
 @pytest.fixture
 def make_bot():
-    """Return a fake bot object with pluggable bot.reply and db.users.plugin()."""
+    """
+    Return a fake bot object with pluggable bot.reply and db.users.plugin().
+    """
 
     class DummyStore(dict):
         async def get_global(self, key, default=None):
@@ -105,15 +107,18 @@ async def test_rss_add_list_delete(monkeypatch, make_bot):
     msg = {"from": SimpleNamespace(bare=room), "type": "groupchat"}
 
     # Add
-    await rss.rss_command(bot, "jid1", "nick1", ["add", fake_feed_link], msg, True)
+    await rss.rss_command(bot, "jid1", "nick1", ["add", fake_feed_link],
+                          msg, True)
     feeds = store.get(rss.RSS_KEY, {})
     assert fake_feed_link in feeds
     assert bot.flush_count >= 1
 
     # Add again to test 'already in feed' and room-join path
     bot.replies.clear()
-    await rss.rss_command(bot, "jid1", "nick1", ["add", fake_feed_link], msg, True)
-    assert any("already added" in x[1] or "Added room" in x[1] for x in bot.replies)
+    await rss.rss_command(bot, "jid1", "nick1", ["add", fake_feed_link],
+                          msg, True)
+    assert any("already added" in x[1]
+               or "Added room" in x[1] for x in bot.replies)
 
     # List
     bot.replies.clear()
@@ -122,12 +127,16 @@ async def test_rss_add_list_delete(monkeypatch, make_bot):
 
     # Delete (should remove the only room, triggers feed delete in dummy)
     bot.replies.clear()
-    await rss.rss_command(bot, "jid1", "nick1", ["delete", fake_feed_link], msg, True)
-    assert any("no rooms left" in x[1] or "Removed this room" in x[1] for x in bot.replies)
+    await rss.rss_command(bot, "jid1", "nick1", ["delete", fake_feed_link],
+                          msg, True)
+    assert any(
+        "no rooms left" in x[1]
+        or "Removed this room" in x[1] for x in bot.replies)
 
     # Delete again (feed not found)
     bot.replies.clear()
-    await rss.rss_command(bot, "jid1", "nick1", ["delete", fake_feed_link], msg, True)
+    await rss.rss_command(bot, "jid1", "nick1", ["delete", fake_feed_link],
+                          msg, True)
     assert any("Feed not found" in x[1] for x in bot.replies)
 
     # Add missing arg
@@ -165,7 +174,8 @@ async def test_fetch_feed_handle_redirect_and_structure(monkeypatch):
     def fake_parse(url, request_headers=None):
         return DummyFeed(url)
 
-    feedparser_mod = type("Feedparser", (), {"parse": staticmethod(fake_parse)})()
+    feedparser_mod = type(
+        "Feedparser", (), {"parse": staticmethod(fake_parse)})()
     monkeypatch.setattr(rss, "feedparser", feedparser_mod)
 
     async def fake_to_thread(fn, *a, **kw):
@@ -228,7 +238,8 @@ def test_get_latest_entry_id():
             },
         ]
 
-    assert rss._get_latest_entry_id(DummyParsed()) == "https://example.org/newest"
+    assert rss._get_latest_entry_id(
+        DummyParsed()) == "https://example.org/newest"
 
     class EmptyParsed:
         entries = []
@@ -241,10 +252,12 @@ def test_normalize_and_resolve_url():
     assert rss._normalize_url("http://abc.com") == "http://abc.com"
 
     assert (
-        rss._resolve_relative_url("https://foo.com/feed", "https://bar.com/page")
+        rss._resolve_relative_url(
+            "https://foo.com/feed", "https://bar.com/page")
         == "https://bar.com/page"
     )
-    assert rss._resolve_relative_url("https://foo.com/feed", "/bar") == "https://foo.com/bar"
+    assert rss._resolve_relative_url(
+        "https://foo.com/feed", "/bar") == "https://foo.com/bar"
     assert rss._resolve_relative_url(None, "/foo") == "/foo"
 
 
@@ -291,13 +304,15 @@ async def test_rss_add_failures(monkeypatch, make_bot):
 
     msg = {"from": SimpleNamespace(bare="room@conf"), "type": "groupchat"}
 
-    await rss.rss_command(bot, "jid", "nick", ["add", "http://bad/feed"], msg, True)
+    await rss.rss_command(bot, "jid", "nick", ["add", "http://bad/feed"],
+                          msg, True)
 
     assert any("Failed to fetch or parse feed" in r[1] for r in bot.replies)
 
 
 @pytest.mark.asyncio
-async def test_rss_check_loop_initializes_missing_last_id_without_posting(monkeypatch, make_bot):
+async def test_rss_check_loop_initializes_missing_last_id_without_posting(
+        monkeypatch, make_bot):
     bot = make_bot()
     store = bot.plugin_store
     url = "http://f.com/rss"
@@ -380,7 +395,8 @@ async def test_rss_check_loop_initializes_missing_last_id_without_posting(monkey
 
 
 @pytest.mark.asyncio
-async def test_rss_check_loop_posts_new_entries_and_flushes_last_id(monkeypatch, make_bot):
+async def test_rss_check_loop_posts_new_entries_and_flushes_last_id(
+        monkeypatch, make_bot):
     bot = make_bot()
     store = bot.plugin_store
     url = "http://f.com/rss"

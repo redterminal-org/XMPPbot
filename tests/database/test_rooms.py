@@ -1,6 +1,5 @@
 import pytest
 import aiosqlite
-import json
 
 from database.rooms import Rooms
 

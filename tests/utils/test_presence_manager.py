@@ -1,4 +1,3 @@
-import pytest
 from utils.presence_manager import PresenceManager
 
 
@@ -6,6 +5,7 @@ class DummyBot:
     def __init__(self):
         self.calls = []
         self.bot_plugins = type("Plugins", (), {"plugins": {}})()
+
     def send_presence(self, **kwargs):
         self.calls.append(kwargs)
 
@@ -37,7 +37,8 @@ def test_broadcast_sends_presence(monkeypatch):
     # Simulate no rooms plugin
     pm.broadcast()
     assert len(bot.calls) == 1
-    assert "pshow" not in bot.calls[0] or isinstance(bot.calls[0]["pshow"], str)
+    assert "pshow" not in bot.calls[0] or isinstance(
+        bot.calls[0]["pshow"], str)
 
 
 def test_broadcast_with_rooms(monkeypatch):

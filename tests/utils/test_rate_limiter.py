@@ -42,7 +42,8 @@ async def test_multiple_clients_independent_buckets():
 async def test_exponential_backoff_and_block(monkeypatch):
     # simulate fast denials to trigger block
     limiter = TokenBucketRateLimiter(
-        capacity=1, deny_threshold=2, deny_window=0.5, base_block_seconds=0.2, max_block_seconds=0.5
+        capacity=1, deny_threshold=2, deny_window=0.5, base_block_seconds=0.2,
+        max_block_seconds=0.5
     )
     # Deny first (bucket empty after 1 request)
     await limiter.allow("zz")
