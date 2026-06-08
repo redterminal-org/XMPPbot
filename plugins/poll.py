@@ -424,6 +424,265 @@ async def _restore_auto_close_tasks(bot):
     await _set_data(bot, data)
 
 
+async def _poll_handle_create(bot, sender_jid, nick, msg, room_jid,
+                              data, room, args):
+    raw = " ".join(args[1:]).strip()
+    duration, question, options, error = _parse_create_args(raw)
+    if error:
+        _poll_reply(bot, msg, error)
+        return
+
+    question = str(question or "").strip()
+    options = [str(o).strip() for o in (options or []) if str(o).strip()]
+
+    if len(question) == 0 or len(question) > MAX_QUESTION_LEN:
+        _poll_reply(
+            bot,
+            msg,
+            "❌ Question must be between 1 and"
+            f" {MAX_QUESTION_LEN} characters.",
+        )
+        return
+
+    if len(options) < 2:
+        _poll_reply(bot, msg, "❌ A poll needs at least two options.")
+        return
+
+    if len(options) > MAX_OPTIONS:
+        _poll_reply(
+            bot,
+            msg,
+            f"❌ A poll can have at most {MAX_OPTIONS}"
+            " options.",
+        )
+        return
+
+    if any(len(opt) > MAX_OPTION_LEN for opt in options):
+        _poll_reply(
+            bot,
+            msg,
+            f"❌ Each option must be at most {MAX_OPTION_LEN}"
+            " characters long.",
+        )
+        return
+
+    poll_id = room["next_id"]
+    room["next_id"] += 1
+
+    creator_jid, _, _ = await _core.get_real_jid(bot, msg)
+    creator_jid = creator_jid or str(sender_jid)
+    creator_nick = (msg.get("mucnick") or msg["from"].resource
+                    or nick or str(sender_jid))
+
+    poll = {
+        "id": poll_id,
+        "room_jid": room_jid,
+        "question": question,
+        "options": options,
+        "votes": {},
+        "created_by": creator_jid,
+        "created_by_nick": creator_nick,
+        "created_at": _now(),
+        "ends_at": (_now() + duration) if duration else None,
+        "closed_at": None,
+        "status": "open",
+    }
+
+    room["polls"][str(poll_id)] = poll
+    await _set_data(bot, data)
+
+    if poll.get("ends_at"):
+        _schedule_auto_close(bot, room_jid, poll)
+
+    lines = [
+        f"📊 Poll #{poll_id} created: {question}",
+        "",
+        _format_poll_options(poll),
+        "",
+        f"Vote with: {bot.prefix}poll vote {poll_id} <number>",
+    ]
+    if poll.get("ends_at"):
+        v = f"{_format_ts(poll['ends_at'])}"
+        v += f" ({_format_remaining(poll['ends_at'])})"
+        lines.append(f"Auto-close: {v}")
+
+    _poll_reply(bot, msg, "\n".join(lines))
+
+
+async def _poll_handle_list(bot, msg, room_jid, room):
+    open_polls = []
+    for poll_id, raw_poll in room.get("polls", {}).items():
+        poll = _normalize_poll(room_jid, poll_id, raw_poll)
+        if poll["status"] == "open":
+            open_polls.append(poll)
+
+    if not open_polls:
+        _poll_reply(bot, msg, "ℹ️ No open polls in this room.")
+        return
+
+    open_polls.sort(key=lambda p: p["id"])
+    lines = ["📋 Open polls in this room:"]
+    for poll in open_polls:
+        if poll.get("ends_at"):
+            suffix = f", ends {_format_ts(poll['ends_at'])}"
+        else:
+            suffix = ""
+        lines.append(
+            f"#{poll['id']} {poll['question']}"
+            f" ({len(poll['options'])} options{suffix})"
+        )
+
+    _poll_reply(bot, msg, "\n".join(lines))
+
+
+async def _poll_handle_history(bot, msg, room_jid, room, args):
+    limit = 10
+    if len(args) > 1 and str(args[1]).isdigit():
+        limit = max(1, min(50, int(args[1])))
+
+    closed_polls = []
+    for poll_id, raw_poll in room.get("polls", {}).items():
+        poll = _normalize_poll(room_jid, poll_id, raw_poll)
+        if poll["status"] in {"closed", "cancelled"}:
+            closed_polls.append(poll)
+
+    if not closed_polls:
+        _poll_reply(bot, msg, "ℹ️ No poll history for this room.")
+        return
+
+    closed_polls.sort(
+        key=lambda p: (-int(p.get("closed_at")
+                            or p.get("created_at") or 0), -p["id"])
+    )
+    lines = ["🗂️ Poll history:"]
+    for poll in closed_polls[:limit]:
+        lines.append(f"#{poll['id']} [{poll['status']}] {poll['question']}")
+
+    _poll_reply(bot, msg, "\n".join(lines))
+
+
+async def _poll_handle_show_result(bot, msg, room_jid, room, args, sub):
+    if len(args) < 2 or not str(args[1]).isdigit():
+        _poll_reply(bot, msg, f"Usage: {bot.prefix}poll {sub} <id>")
+        return
+
+    poll = _get_poll(room, args[1])
+    if not poll:
+        _poll_reply(bot, msg, f"❌ Poll #{args[1]} not found.")
+        return
+
+    poll = _normalize_poll(room_jid, args[1], poll)
+
+    if sub == "show":
+        lines = [
+            _format_poll_header(poll),
+            "",
+            _format_poll_options(poll),
+        ]
+        if poll["status"] == "open":
+            lines += [
+                "",
+                f"Vote with: {bot.prefix}poll"
+                f" vote {poll['id']} <number>",
+            ]
+        _poll_reply(bot, msg, "\n".join(lines))
+        return
+
+    _poll_reply(bot, msg, _format_poll_results(poll))
+
+
+async def _poll_handle_vote(bot, msg, room_jid, room, data, args):
+    if (len(args) != 3 or not str(args[1]).isdigit()
+            or not str(args[2]).isdigit()):
+        _poll_reply(
+            bot,
+            msg,
+            f"Usage: {bot.prefix}poll vote <id> <option-number>",
+        )
+        return
+
+    poll_id = args[1]
+    option_num = int(args[2])
+
+    poll = _get_poll(room, poll_id)
+    if not poll:
+        _poll_reply(bot, msg, f"❌ Poll #{poll_id} not found.")
+        return
+
+    poll = _normalize_poll(room_jid, poll_id, poll)
+
+    if not _poll_is_open(poll):
+        _poll_reply(bot, msg, f"❌ Poll #{poll_id} is not open.")
+        return
+
+    if option_num < 1 or option_num > len(poll["options"]):
+        _poll_reply(
+            bot,
+            msg,
+            "❌ Option must be between 1 and"
+            f" {len(poll['options'])}.",
+        )
+        return
+
+    voter_jid, _, _ = await _core.get_real_jid(bot, msg)
+    if not voter_jid:
+        _poll_reply(
+            bot,
+            msg,
+            "❌ Could not determine your real JID"
+            " in this room.",
+        )
+        return
+
+    poll["votes"][voter_jid] = option_num - 1
+    room["polls"][str(poll_id)] = poll
+    await _set_data(bot, data)
+
+    _poll_reply(
+        bot,
+        msg,
+        f"✅ Your vote for poll #{poll_id}"
+        f" is now '{poll['options'][option_num - 1]}'.",
+    )
+
+
+async def _poll_handle_manage(bot, msg, room_jid, room, is_room, args, sub):
+    if len(args) < 2 or not str(args[1]).isdigit():
+        _poll_reply(bot, msg, f"Usage: {bot.prefix}poll {sub} <id>")
+        return
+
+    poll_id = args[1]
+    poll = _get_poll(room, poll_id)
+    if not poll:
+        _poll_reply(bot, msg, f"❌ Poll #{poll_id} not found.")
+        return
+
+    poll = _normalize_poll(room_jid, poll_id, poll)
+
+    if not await _can_manage_poll(bot, msg, is_room, poll):
+        _poll_reply(
+            bot,
+            msg,
+            "⛔ Only the poll creator or a room"
+            " moderator/admin can do that.",
+        )
+        return
+
+    if sub == "delete":
+        success, text = await _delete_poll(bot, room_jid, poll_id)
+        _poll_reply(bot, msg, ("✅ " if success else "❌ ") + text)
+        return
+
+    success, text = await _close_poll(
+        bot,
+        room_jid,
+        poll_id,
+        cancelled=(sub == "cancel"),
+        announce=True,
+    )
+    _poll_reply(bot, msg, ("✅ " if success else "❌ ") + text)
+
+
 @command("poll", role=Role.USER)
 async def poll_command(bot, sender_jid, nick, args, msg, is_room):
     """
@@ -470,7 +729,6 @@ async def poll_command(bot, sender_jid, nick, args, msg, is_room):
     is_muc_pm = _core._is_muc_pm(msg)
     is_public_room = _core._is_public_muc(msg, is_room)
 
-    # Public room commands
     if is_public_room:
         room_jid = msg["from"].bare
 
@@ -482,236 +740,30 @@ async def poll_command(bot, sender_jid, nick, args, msg, is_room):
         room = _room_bucket(data, room_jid)
 
         if sub == "create":
-            raw = " ".join(args[1:]).strip()
-            duration, question, options, error = _parse_create_args(raw)
-            if error:
-                _poll_reply(bot, msg, error)
-                return
-
-            question = str(question or "").strip()
-            options = [str(o).strip()
-                       for o in (options or []) if str(o).strip()]
-
-            if len(question) == 0 or len(question) > MAX_QUESTION_LEN:
-                _poll_reply(bot, msg,
-                            "❌ Question must be between 1 and"
-                            f" {MAX_QUESTION_LEN} characters.")
-                return
-
-            if len(options) < 2:
-                _poll_reply(bot, msg, "❌ A poll needs at least two options.")
-                return
-
-            if len(options) > MAX_OPTIONS:
-                _poll_reply(bot, msg,
-                            f"❌ A poll can have at most {MAX_OPTIONS}"
-                            " options.")
-                return
-
-            if any(len(opt) > MAX_OPTION_LEN for opt in options):
-                _poll_reply(bot, msg,
-                            f"❌ Each option must be at most {MAX_OPTION_LEN}"
-                            " characters long.")
-                return
-
-            poll_id = room["next_id"]
-            room["next_id"] += 1
-
-            creator_jid, _, _ = await _core.get_real_jid(bot, msg)
-            creator_jid = creator_jid or str(sender_jid)
-            creator_nick = (msg.get("mucnick") or msg["from"].resource
-                            or nick or str(sender_jid))
-
-            poll = {
-                "id": poll_id,
-                "room_jid": room_jid,
-                "question": question,
-                "options": options,
-                "votes": {},
-                "created_by": creator_jid,
-                "created_by_nick": creator_nick,
-                "created_at": _now(),
-                "ends_at": (_now() + duration) if duration else None,
-                "closed_at": None,
-                "status": "open",
-            }
-
-            room["polls"][str(poll_id)] = poll
-            await _set_data(bot, data)
-
-            if poll.get("ends_at"):
-                _schedule_auto_close(bot, room_jid, poll)
-
-            lines = [
-                f"📊 Poll #{poll_id} created: {question}",
-                "",
-                _format_poll_options(poll),
-                "",
-                f"Vote with: {bot.prefix}poll vote {poll_id} <number>",
-            ]
-            if poll.get("ends_at"):
-                v = f"{_format_ts(poll['ends_at'])}"
-                v += f" ({_format_remaining(poll['ends_at'])})"
-                lines.append(f"Auto-close: {v}")
-
-            _poll_reply(bot, msg, "\n".join(lines))
+            await _poll_handle_create(bot, sender_jid, nick, msg,
+                                      room_jid, data, room, args)
             return
 
         if sub == "list":
-            open_polls = []
-            for poll_id, raw_poll in room.get("polls", {}).items():
-                poll = _normalize_poll(room_jid, poll_id, raw_poll)
-                if poll["status"] == "open":
-                    open_polls.append(poll)
-
-            if not open_polls:
-                _poll_reply(bot, msg, "ℹ️ No open polls in this room.")
-                return
-
-            open_polls.sort(key=lambda p: p["id"])
-            lines = ["📋 Open polls in this room:"]
-            for poll in open_polls:
-                suffix = (f", ends {_format_ts(poll['ends_at'])}"
-                          if poll.get("ends_at") else "")
-                lines.append(f"#{poll['id']} {poll['question']}"
-                             f" ({len(poll['options'])} options{suffix})")
-
-            _poll_reply(bot, msg, "\n".join(lines))
+            await _poll_handle_list(bot, msg, room_jid, room)
             return
 
         if sub == "history":
-            limit = 10
-            if len(args) > 1 and str(args[1]).isdigit():
-                limit = max(1, min(50, int(args[1])))
-
-            closed_polls = []
-            for poll_id, raw_poll in room.get("polls", {}).items():
-                poll = _normalize_poll(room_jid, poll_id, raw_poll)
-                if poll["status"] in {"closed", "cancelled"}:
-                    closed_polls.append(poll)
-
-            if not closed_polls:
-                _poll_reply(bot, msg, "ℹ️ No poll history for this room.")
-                return
-
-            closed_polls.sort(key=lambda p: (
-                -int(p.get("closed_at") or p.get(
-                    "created_at") or 0), -p["id"]))
-            lines = ["🗂️ Poll history:"]
-            for poll in closed_polls[:limit]:
-                lines.append(f"#{poll['id']} [{poll['status']}]"
-                             f" {poll['question']}")
-
-            _poll_reply(bot, msg, "\n".join(lines))
+            await _poll_handle_history(bot, msg, room_jid, room, args)
             return
 
         if sub in {"show", "result"}:
-            if len(args) < 2 or not str(args[1]).isdigit():
-                _poll_reply(bot, msg, f"Usage: {bot.prefix}poll {sub} <id>")
-                return
-
-            poll = _get_poll(room, args[1])
-            if not poll:
-                _poll_reply(bot, msg, f"❌ Poll #{args[1]} not found.")
-                return
-
-            poll = _normalize_poll(room_jid, args[1], poll)
-
-            if sub == "show":
-                lines = [
-                    _format_poll_header(poll),
-                    "",
-                    _format_poll_options(poll),
-                ]
-                if poll["status"] == "open":
-                    lines += ["",
-                              f"Vote with: {bot.prefix}poll"
-                              f" vote {poll['id']} <number>"]
-                _poll_reply(bot, msg, "\n".join(lines))
-                return
-
-            _poll_reply(bot, msg, _format_poll_results(poll))
+            await _poll_handle_show_result(bot, msg, room_jid, room,
+                                           args, sub)
             return
 
         if sub == "vote":
-            if (len(args) != 3 or not str(args[1]).isdigit()
-                    or not str(args[2]).isdigit()):
-                _poll_reply(bot, msg,
-                            f"Usage: {bot.prefix}poll vote <id>"
-                            " <option-number>")
-                return
-
-            poll_id = args[1]
-            option_num = int(args[2])
-
-            poll = _get_poll(room, poll_id)
-            if not poll:
-                _poll_reply(bot, msg, f"❌ Poll #{poll_id} not found.")
-                return
-
-            poll = _normalize_poll(room_jid, poll_id, poll)
-
-            if not _poll_is_open(poll):
-                _poll_reply(bot, msg, f"❌ Poll #{poll_id} is not open.")
-                return
-
-            if option_num < 1 or option_num > len(poll["options"]):
-                _poll_reply(bot, msg,
-                            "❌ Option must be between 1 and"
-                            f" {len(poll['options'])}.")
-                return
-
-            voter_jid, _, _ = await _core.get_real_jid(bot, msg)
-            if not voter_jid:
-                _poll_reply(bot, msg,
-                            "❌ Could not determine your real JID"
-                            " in this room.")
-                return
-
-            poll["votes"][voter_jid] = option_num - 1
-            room["polls"][str(poll_id)] = poll
-            await _set_data(bot, data)
-
-            _poll_reply(
-                bot,
-                msg,
-                f"✅ Your vote for poll #{poll_id}"
-                f" is now '{poll['options'][option_num - 1]}'.",
-            )
+            await _poll_handle_vote(bot, msg, room_jid, room, data, args)
             return
 
         if sub in {"close", "cancel", "delete"}:
-            if len(args) < 2 or not str(args[1]).isdigit():
-                _poll_reply(bot, msg, f"Usage: {bot.prefix}poll {sub} <id>")
-                return
-
-            poll_id = args[1]
-            poll = _get_poll(room, poll_id)
-            if not poll:
-                _poll_reply(bot, msg, f"❌ Poll #{poll_id} not found.")
-                return
-
-            poll = _normalize_poll(room_jid, poll_id, poll)
-
-            if not await _can_manage_poll(bot, msg, is_room, poll):
-                _poll_reply(bot, msg,
-                            "⛔ Only the poll creator or a room"
-                            "moderator/admin can do that.")
-                return
-
-            if sub == "delete":
-                success, text = await _delete_poll(bot, room_jid, poll_id)
-                _poll_reply(bot, msg, ("✅ " if success else "❌ ") + text)
-                return
-
-            success, text = await _close_poll(
-                bot,
-                room_jid,
-                poll_id,
-                cancelled=(sub == "cancel"),
-                announce=True,
-            )
-            _poll_reply(bot, msg, ("✅ " if success else "❌ ") + text)
+            await _poll_handle_manage(bot, msg, room_jid, room, is_room,
+                                      args, sub)
             return
 
         _poll_reply(
@@ -722,8 +774,6 @@ async def poll_command(bot, sender_jid, nick, args, msg, is_room):
         )
         return
 
-    # MUC DM only for toggle commands. Other poll actions happen in public
-    # room.
     if is_muc_pm:
         _poll_reply(
             bot,
