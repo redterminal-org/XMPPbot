@@ -223,24 +223,68 @@ class Bot(slixmpp.ClientXMPP):
     # HELPER FUNCTIONS
     # -------------------------------------------------
 
+    def _parse_bare_jid(self, jid_value, *, label, fallback_to_none=False):
+        """
+        Parse a JID and return its bare form as a string.
+
+        If parsing fails, logs a warning and returns None unless
+        fallback_to_none is False, in which case it returns the original
+        value as a string.
+        """
+        try:
+            return slixmpp.JID(jid_value).bare
+        except Exception as e:
+            log.warning("[BOT] Failed to parse %s JID '%s': %s",
+                        label, jid_value, e)
+            if fallback_to_none:
+                return None
+            return None
+
+    async def _get_owner_bare_jid(self):
+        """
+        Resolve the configured owner JID to its bare form.
+        """
+        try:
+            return slixmpp.JID(config["owner"]).bare
+        except Exception as e:
+            log.warning("[BOT] Failed to parse owner JID: %s", e)
+            return None
+
+    async def _get_room_role_from_presence(self, jid, room, db_role):
+        """
+        Elevate role to MODERATOR when the user is an admin/owner in the room.
+        """
+        from plugins.rooms import JOINED_ROOMS
+
+        if not room:
+            return db_role
+
+        room_info = JOINED_ROOMS.get(room)
+        if not room_info:
+            return db_role
+
+        nicks = room_info.get("nicks", {})
+        for nick_info in nicks.values():
+            try:
+                if str(nick_info.get("jid")) == str(jid):
+                    affiliation = nick_info.get("affiliation", "")
+                    if (affiliation in ("admin", "owner")
+                            and db_role > Role.MODERATOR):
+                        return Role.MODERATOR
+            except Exception as e:
+                log.debug("[BOT] Error checking room affiliation: %s", e)
+
+        return db_role
+
     async def get_user_role(self, jid, room=None) -> Role:
         """
         Resolve a user's role using config and database.
         """
-        import slixmpp
-        from plugins.rooms import JOINED_ROOMS
-
-        try:
-            jid = slixmpp.JID(jid).bare
-        except Exception as e:
-            log.warning("[BOT] Failed to parse JID '%s': %s", jid, e)
+        jid = self._parse_bare_jid(jid, label="user")
+        if jid is None:
             return Role.NONE
 
-        try:
-            owner_jid = slixmpp.JID(config["owner"]).bare
-        except Exception as e:
-            log.warning("[BOT] Failed to parse owner JID: %s", e)
-            owner_jid = None
+        owner_jid = await self._get_owner_bare_jid()
 
         # owner override
         if owner_jid and jid == owner_jid:
@@ -256,22 +300,62 @@ class Bot(slixmpp.ClientXMPP):
         except KeyError:
             return Role.NONE
 
-        # Elevate to MODERATOR if user is admin/owner in any joined room
-        if room:
-            room_info = JOINED_ROOMS.get(room)
-            if room_info:
-                nicks = room_info.get("nicks", {})
-                for nick_info in nicks.values():
-                    try:
-                        if str(nick_info.get("jid")) == str(jid):
-                            affiliation = nick_info.get("affiliation", "")
-                            if (affiliation in ("admin", "owner")
-                                    and db_role > Role.MODERATOR):
-                                return Role.MODERATOR
-                    except Exception as e:
-                        log.debug(
-                            "[BOT] Error checking room affiliation: %s", e)
-        return db_role
+        return await self._get_room_role_from_presence(jid, room, db_role)
+
+    def _format_reply_body(self, msg, text, mention):
+        """
+        Build the outbound reply body without changing reply semantics.
+        """
+        if msg.get("type", "chat") == "groupchat" and mention:
+            nick = msg.get("mucnick") or msg["from"].resource
+            return f"{nick}: {text}"
+        return text
+
+    def _build_reply_message(self, msg, text, mention, thread, ephemeral):
+        """
+        Create the outbound message object for reply().
+        """
+        msg_type = msg.get("type", "chat")
+        body = text
+
+        if isinstance(body, list):
+            body = "\n".join(body)
+
+        body = self._format_reply_body(msg, body, mention)
+
+        if msg_type == "groupchat":
+            message = self.make_message(
+                mto=msg["from"].bare,
+                mbody=body,
+                mtype="groupchat"
+            )
+        else:
+            message = self.make_message(
+                mto=msg["from"],
+                mbody=body,
+                mtype="chat"
+            )
+
+        if thread:
+            thread_id = msg.get("thread") or msg.get("id")
+            if thread_id:
+                try:
+                    message["thread"] = thread_id
+                except Exception:
+                    if msg_type == "groupchat":
+                        log.debug("[BOT] Setting thread failed!")
+
+        if ephemeral or msg_type != "groupchat":
+            message.append(ET.Element("{urn:xmpp:hints}no-store"))
+
+        return message, body
+
+    def _record_test_reply(self, msg, text):
+        """
+        Preserve test-side reply capture behavior.
+        """
+        if hasattr(msg, "replies"):
+            msg.replies.append(text)
 
     def reply(self, msg, text, mention=True, thread=True, rate_limit=True,
               ephemeral=False):
@@ -287,91 +371,29 @@ class Bot(slixmpp.ClientXMPP):
 
         Args:
             msg: Original message object
-            text (str|list): Reply text or list of lines
-            mention (bool): Mention sender in group chats
-            thread (bool): Thread reply if possible
-            rate_limit (bool): Apply anti-spam limit
-            ephemeral (bool): Mark as ephemeral (no-store)
+            text: Reply text or list of lines
+            mention: Mention sender in group chats
+            thread: Thread reply if possible
+            rate_limit: Apply anti-spam limit
+            ephemeral: Mark as ephemeral (no-store)
         """
+        try:
+            message, body = self._build_reply_message(
+                msg, text, mention, thread, ephemeral
+            )
 
-        # Convert list responses into multi-line text
-        if isinstance(text, list):
-            text = "\n".join(text)
+            # send reply safely
+            asyncio.create_task(self._reply_send_wrapper(message))
 
-        msg_type = msg.get("type", "chat")
+            # support test MockMessage
+            self._record_test_reply(msg, text if not isinstance(text, list)
+                                    else "\n".join(text))
 
-        if msg_type == "groupchat":
-
-            body = text
-
-            if mention:
-                nick = msg.get("mucnick") or msg["from"].resource
-                body = f"{nick}: {text}"
-
-            try:
-                message = self.make_message(
-                    mto=msg["from"].bare,
-                    mbody=body,
-                    mtype="groupchat"
-                )
-
-                if thread:
-                    thread_id = msg.get("thread") or msg.get("id")
-                    if thread_id:
-                        try:
-                            message["thread"] = thread_id
-                        except Exception:
-                            log.debug("[BOT] Setting thread failed!")
-
-                # Make reply ephemeral
-                if ephemeral:
-                    message.append(ET.Element("{urn:xmpp:hints}no-store"))
-
-                # send reply safely
-                asyncio.create_task(self._reply_send_wrapper(message))
-
-                # log message
-                # log.info(f"[BOT] Replying in room {msg['from'].bare} to
-                # {msg.get('mucnick')}: {text}")
-
-                # support test MockMessage
-                if hasattr(msg, "replies"):
-                    msg.replies.append(text)
-
-            except Exception as e:
+        except Exception as e:
+            msg_type = msg.get("type", "chat")
+            if msg_type == "groupchat":
                 log.exception("[BOT] Error creating groupchat reply: %s", e)
-
-        else:
-
-            try:
-                message = self.make_message(
-                    mto=msg["from"],
-                    mbody=text,
-                    mtype="chat"
-                )
-
-                if thread:
-                    thread_id = msg.get("thread") or msg.get("id")
-                    if thread_id:
-                        try:
-                            message["thread"] = thread_id
-                        except Exception:
-                            pass
-
-                # Make reply ephemeral
-                message.append(ET.Element("{urn:xmpp:hints}no-store"))
-
-                # log message
-                # log.info(f"[BOT] Replying to {msg['from']}: {text}")
-
-                # send reply safely
-                asyncio.create_task(self._reply_send_wrapper(message))
-
-                # support test MockMessage
-                if hasattr(msg, "replies"):
-                    msg.replies.append(text)
-
-            except Exception as e:
+            else:
                 log.exception("[BOT] Error creating private reply: %s", e)
 
     async def _reply_send_wrapper(self, message):
@@ -386,6 +408,59 @@ class Bot(slixmpp.ClientXMPP):
     # -------------------------------------------------
     # UNIFIED COMMAND HANDLER
     # -------------------------------------------------
+
+    def _get_message_room_and_nick(self, msg):
+        """
+        Resolve room and nick from a message if possible.
+        """
+        room = None
+        nick = None
+        try:
+            room = msg['from'].bare
+            nick = msg.get("mucnick") or msg["from"].resource
+        except Exception:
+            pass
+        return room, nick
+
+    def _resolve_sender_jid(self, msg, sender_jid, nick):
+        """
+        Resolve the real sender JID for room messages, with fallback.
+        """
+        jid = None
+        room = None
+        muc = self.plugin.get("xep_0045", None)
+
+        try:
+            if muc:
+                room, nick = self._get_message_room_and_nick(msg)
+                jid = muc.get_jid_property(room, nick, "jid")
+        except Exception as e:
+            log.debug("[BOT] Error getting JID from MUC: %s", e)
+
+        if jid is None:
+            return str(sender_jid), room
+
+        try:
+            import slixmpp
+            return str(slixmpp.JID(jid).bare), room
+        except Exception as e:
+            log.warning("[BOT] Failed to parse resolved JID: %s", e)
+            return str(sender_jid), room
+
+    def _can_execute_command_in_room(self, cmd_obj, is_room):
+        """
+        Enforce the MUC direct-message restriction for privileged commands.
+        """
+        required_role = getattr(cmd_obj, "role", Role.NONE)
+        return not (required_role <= Role.MODERATOR and is_room)
+
+    def _command_error_message(self, user_role, cmd_name, error):
+        """
+        Preserve the existing public/internal error wording.
+        """
+        if user_role in (Role.OWNER, Role.ADMIN):
+            return f"🔴 Command error: {error}"
+        return f"🔴 Command '{cmd_name}' failed due to internal error."
 
     async def handle_command(self, body, sender_jid, nick, msg, is_room):
         """
@@ -446,69 +521,38 @@ class Bot(slixmpp.ClientXMPP):
         - Errors are logged and a user-friendly message is returned to the
           sender.
         """
-
         if not body:
             return
         if not body.startswith(self.prefix):
             return
+
         text = body[len(self.prefix):].strip()
         if not text:
             return
 
-        # Checking for real JID
-        jid = None
-        room = None
-        muc = self.plugin.get("xep_0045", None)
-
-        try:
-            if muc:
-                room = msg['from'].bare
-                nick = msg.get("mucnick") or msg["from"].resource
-                jid = muc.get_jid_property(room, nick, "jid")
-        except Exception as e:
-            log.debug("[BOT] Error getting JID from MUC: %s", e)
-
-        # Fallback to sender_jid if JID resolution failed
-        if jid is None:
-            jid = sender_jid
-        else:
-            try:
-                jid = str(slixmpp.JID(jid).bare)
-            except Exception as e:
-                log.warning("[BOT] Failed to parse resolved JID: %s", e)
-                jid = str(sender_jid)
+        jid, room = self._resolve_sender_jid(msg, sender_jid, nick)
 
         # Apply rate limiting on ingress
         allowed, retry_after = await self.rate_limiter.allow(jid)
         if not allowed:
-            # Avoid notifying the whole room; log and occasional
-            # admin notification only
             if self.rate_limiter.notify_allowed(jid):
                 log.info(("[BOT] 🟡️ Rate-limited %s "
                           "in room %s (retry_after=%.1fs)"),
                          jid, room, retry_after)
             return
 
-        # --- resolve command using command resolver ---
         cmd_obj, args = resolve_command(text)
-
         if not cmd_obj:
             return
 
         cmd_name = cmd_obj.name
-
-        # determine sender role
         user_role = await self.get_user_role(jid, room)
 
-        # permission check
         if not check_permission(user_role, cmd_obj):
             self.reply(msg, "🔴 You are not allowed to use this command.")
             return
 
-        # Commands which require permissions of at least "moderator"
-        # shouldn't be used in GroupChat
-        required_role = getattr(cmd_obj, "role", Role.NONE)
-        if required_role <= Role.MODERATOR and is_room:
+        if not self._can_execute_command_in_room(cmd_obj, is_room):
             self.reply(msg, "🔴 Use this command in MUC Direct Message only.")
             return
 
@@ -517,19 +561,16 @@ class Bot(slixmpp.ClientXMPP):
             if not handler:
                 log.error(f"[BOT]🔴 Command '{cmd_name}' has no handler")
                 return
+
             result = handler(self, sender_jid, nick, args, msg, is_room)
             if inspect.isawaitable(result):
                 await result
-        except Exception as e:
-            log.exception(
-                f"[BOT]🔴  Error while executing command '{cmd_name}'")
-            if user_role in (Role.OWNER, Role.ADMIN):
-                err_msg = f"🔴 Command error: {e}"
-            else:
-                err_msg = (f"🔴 Command '{cmd_name}' "
-                           f"failed due to internal error.")
 
-            self.reply(msg, err_msg)
+        except Exception as e:
+            log.exception("[BOT]🔴  Error while executing command"
+                          f" '{cmd_name}'")
+            self.reply(msg, self._command_error_message(user_role,
+                                                        cmd_name, e))
 
 
 # --------------------------------------------------
