@@ -39,7 +39,7 @@ XMPP_KEY = "XMPP"
 
 PLUGIN_META = {
     "name": "xmpp",
-    "version": "0.2.2",
+    "version": "0.3.2",
     "description":
     "XMPP utility tools (ping, diagnostics, service discovery, DNS SRV, etc.)",
     "category": "tools",
@@ -202,10 +202,9 @@ async def cmd_xmpp_version(bot, sender_jid, nick, args, msg, is_room):
         {prefix}xmpp version <domain>
         {prefix}x version <domain>
     """
-    # Check, if command is allowed in this context (room or MUC PM)
     store = await get_xmpp_store(bot)
     enabled_rooms = await store.get_global(XMPP_KEY, default={})
-    if (is_room or _is_muc_pm(msg)) and msg["from"].bare not in enabled_rooms:
+    if _should_block_xmpp_version(is_room, msg, enabled_rooms):
         return
 
     if not args or len(args) < 1:
@@ -214,58 +213,87 @@ async def cmd_xmpp_version(bot, sender_jid, nick, args, msg, is_room):
 
     target = get_domain_from_jid(args[0])
 
-    # Validate domain
     is_valid, error_msg = _validate_domain(target)
     if not is_valid:
         bot.reply(msg, f"❌ Invalid domain: {error_msg}")
         return
 
     if "@" in args[0]:
-        bot.reply(msg, f"Note: 'version' only works with domains."
-                       f" Using '{target}' from '{args[0]}'.")
+        bot.reply(
+            msg,
+            f"Note: 'version' only works with domains."
+            f" Using '{target}' from '{args[0]}'."
+        )
 
     try:
         result = await bot.plugin["xep_0092"].get_version(jid=target,
                                                           timeout=8)
-        name, version, os_info = None, None, None
-        if hasattr(result, 'xml'):
-            for child in result.xml:
-                if '}' in child.tag:
-                    tag = child.tag.split('}')[-1]
-                else:
-                    tag = child.tag
-                if tag == 'query':
-                    for elem in child:
-                        if '}' in elem.tag:
-                            elem_tag = elem.tag.split('}')[-1]
-                        else:
-                            elem_tag = elem.tag
-                        if elem_tag == 'name':
-                            name = elem.text
-                        elif elem_tag == 'version':
-                            version = elem.text
-                        elif elem_tag == 'os':
-                            os_info = elem.text
+        name, version, os_info = _extract_xmpp_version_info(result)
+
         if name and version:
-            version_info = f"**{name}** v{version}"
-            if os_info:
-                version_info += f" on {os_info}"
+            version_info = _format_xmpp_version_info(name, version, os_info)
             bot.reply(msg, f"ℹ️ Version for {target}: {version_info}")
         else:
-            bot.reply(msg, f"ℹ️ {target} does not provide version"
-                           f" information via XEP-0092")
+            bot.reply(
+                msg,
+                f"ℹ️ {target} does not provide version"
+                f" information via XEP-0092"
+            )
     except slixmpp.exceptions.IqTimeout:
         bot.reply(msg, f"🔴 Version request to {target} timed out.")
     except slixmpp.exceptions.IqError as e:
-        err = e.iq['error']
-        err_condition = err.get('condition', 'unknown')
+        err_condition = _get_iq_error_condition(e)
         if err_condition == "service-unavailable":
-            bot.reply(msg, f"🔴 {target} does not support version"
-                           f" requests (XEP-0092).")
+            bot.reply(
+                msg,
+                f"🔴 {target} does not support version"
+                f" requests (XEP-0092)."
+            )
         else:
             bot.reply(msg, f"🔴 Version request failed: {err_condition}")
     except Exception as e:
         bot.reply(msg, f"🔴 Error: {e}")
+
+
+def _should_block_xmpp_version(is_room, msg, enabled_rooms):
+    return ((is_room or _is_muc_pm(msg))
+            and msg["from"].bare not in enabled_rooms)
+
+
+def _extract_xmpp_version_info(result):
+    name, version, os_info = None, None, None
+
+    if hasattr(result, "xml"):
+        for child in result.xml:
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag != "query":
+                continue
+
+            for elem in child:
+                if "}" in elem.tag:
+                    elem_tag = elem.tag.split("}")[-1]
+                else:
+                    elem_tag = elem.tag
+                if elem_tag == "name":
+                    name = elem.text
+                elif elem_tag == "version":
+                    version = elem.text
+                elif elem_tag == "os":
+                    os_info = elem.text
+
+    return name, version, os_info
+
+
+def _format_xmpp_version_info(name, version, os_info):
+    version_info = f"**{name}** v{version}"
+    if os_info:
+        version_info += f" on {os_info}"
+    return version_info
+
+
+def _get_iq_error_condition(exc):
+    err = exc.iq["error"]
+    return err.get("condition", "unknown")
 
 
 @command("xmpp uptime", role=Role.USER, aliases=["x uptime"])
@@ -391,88 +419,174 @@ async def cmd_xmpp_contact(bot, sender_jid, nick, args, msg, is_room):
         {prefix}xmpp contact <domain>
         {prefix}x contact <domain>
     """
-    # Check, if command is allowed in this context (room or MUC PM)
     store = await get_xmpp_store(bot)
     enabled_rooms = await store.get_global(XMPP_KEY, default={})
-    if (is_room or _is_muc_pm(msg)) and msg["from"].bare not in enabled_rooms:
+    if _should_block_xmpp_contact(is_room, msg, enabled_rooms):
         return
 
-    if not args or len(args) < 1:
+    if not args:
         bot.reply(msg, "❌ Missing domain")
         return
 
     target = get_domain_from_jid(args[0])
-
-    # Validate domain
     is_valid, error_msg = _validate_domain(target)
     if not is_valid:
         bot.reply(msg, f"❌ Invalid domain: {error_msg}")
         return
 
-    if "@" in args[0]:
-        bot.reply(msg, "Note: 'contact' only works with domains."
-                       f" Using '{target}' from '{args[0]}'.")
+    _reply_xmpp_contact_domain_note(bot, msg, args[0], target)
 
     try:
         info = await bot.plugin["xep_0030"].get_info(jid=target, timeout=8)
-        disco_info = info.get('disco_info', {})
-        contact_info = {}
-        if 'form' in disco_info and disco_info['form']:
-            form = disco_info['form']
-            for field in form:
-                field_var = field.get('var', '')
-                values = field.get('value', [])
-                if not values:
-                    continue
-                if 'admin' in field_var.lower():
-                    if isinstance(values, list):
-                        contact_info['Admin'] = values
-                    else:
-                        contact_info['Admin'] = [values]
-                elif 'abuse' in field_var.lower():
-                    if isinstance(values, list):
-                        contact_info['Abuse'] = values
-                    else:
-                        contact_info['Abuse'] = [values]
-                elif 'security' in field_var.lower():
-                    if isinstance(values, list):
-                        contact_info['Security'] = values
-                    else:
-                        contact_info['Security'] = [values]
-                elif 'feedback' in field_var.lower():
-                    if isinstance(values, list):
-                        contact_info['Feedback'] = values
-                    else:
-                        contact_info['Feedback'] = [values]
-                elif 'support' in field_var.lower():
-                    if isinstance(values, list):
-                        contact_info['Support'] = values
-                    else:
-                        contact_info['Support'] = [values]
-        if contact_info:
-            lines = []
-            for contact_type in ['Admin', 'Abuse', 'Security',
-                                 'Feedback', 'Support']:
-                if contact_type in contact_info:
-                    for addr in contact_info[contact_type]:
-                        lines.append(f"  • {contact_type}: {addr}")
-            bot.reply(msg, f"📧 Contact info for {target}:\n"
-                           + "\n".join(lines))
-        else:
-            bot.reply(msg, f"ℹ️  {target} does not provide contact"
-                           "information via XEP-0030")
+        contact_info = _extract_xmpp_contact_info(info.get("disco_info", {}))
+        _reply_xmpp_contact_result(bot, msg, target, contact_info)
     except slixmpp.exceptions.IqTimeout:
         bot.reply(msg, f"🔴 Contact request to {target} timed out.")
     except slixmpp.exceptions.IqError as e:
-        err = e.iq['error']
+        _reply_xmpp_contact_iq_error(bot, msg, target, e)
+    except Exception as e:
+        bot.reply(msg, f"🔴 Error: {e}")
+
+
+def _should_block_xmpp_contact(is_room, msg, enabled_rooms):
+    return ((is_room or _is_muc_pm(msg))
+            and msg["from"].bare not in enabled_rooms)
+
+
+def _reply_xmpp_contact_domain_note(bot, msg, raw_target, target):
+    if "@" in raw_target:
+        bot.reply(
+            msg,
+            "Note: 'contact' only works with domains."
+            f" Using '{target}' from '{raw_target}'."
+        )
+
+
+def _extract_xmpp_contact_info(disco_info):
+    form = disco_info.get("form")
+    if not form:
+        return {}
+
+    contact_info = {}
+    for field in form:
+        label = _contact_label_for_field(field.get("var", ""))
+        values = field.get("value", [])
+        if label and values:
+            contact_info[label] = _normalize_contact_values(values)
+    return contact_info
+
+
+def _contact_label_for_field(field_var):
+    lowered = field_var.lower()
+    mapping = (
+        ("admin", "Admin"),
+        ("abuse", "Abuse"),
+        ("security", "Security"),
+        ("feedback", "Feedback"),
+        ("support", "Support"),
+    )
+    for needle, label in mapping:
+        if needle in lowered:
+            return label
+    return None
+
+
+def _normalize_contact_values(values):
+    return values if isinstance(values, list) else [values]
+
+
+def _reply_xmpp_contact_result(bot, msg, target, contact_info):
+    if not contact_info:
+        bot.reply(
+            msg,
+            f"ℹ️  {target} does not provide contact"
+            "information via XEP-0030"
+        )
+        return
+
+    lines = _format_xmpp_contact_lines(contact_info)
+    bot.reply(msg, f"📧 Contact info for {target}:\n" + "\n".join(lines))
+
+
+def _format_xmpp_contact_lines(contact_info):
+    contact_types = ["Admin", "Abuse", "Security", "Feedback", "Support"]
+    lines = []
+    for contact_type in contact_types:
+        for addr in contact_info.get(contact_type, []):
+            lines.append(f"  • {contact_type}: {addr}")
+    return lines
+
+
+def _reply_xmpp_contact_iq_error(bot, msg, target, exc):
+    err_condition = _get_iq_error_condition(exc)
+    if err_condition == "service-unavailable":
+        bot.reply(
+            msg,
+            f"🔴 {target} does not support"
+            " contact requests (XEP-0030)."
+        )
+    else:
+        bot.reply(msg, f"🔴 Contact request failed: {err_condition}")
+
+
+def _format_disco_identity(ident):
+    if isinstance(ident, tuple) and len(ident) >= 2:
+        category = ident[0]
+        ident_type = ident[1]
+        name = ident[2] if len(ident) > 2 else None
+        ident_str = category
+        if ident_type:
+            ident_str += f"/{ident_type}"
+        if name:
+            ident_str += f" ({name})"
+        return f"  • {ident_str}"
+    return None
+
+
+def _extract_xmpp_info_lines(disco_info):
+    identities = []
+    if 'identities' in disco_info:
+        for ident in disco_info['identities']:
+            formatted = _format_disco_identity(ident)
+            if formatted:
+                identities.append(formatted)
+
+    features = []
+    if 'features' in disco_info:
+        features = [f"  • {feature}" for feature in disco_info['features']]
+
+    return identities, features
+
+
+def _build_xmpp_info_result(target, identities, features):
+    result = f"🔍 Info for {target}:\n"
+    if identities:
+        result += "\n**Identities:**\n" + "\n".join(identities)
+    if features:
+        result += "\n**Features:**\n" + "\n".join(features[:10])
+        if len(features) > 10:
+            result += f"\n  ... and {len(features) - 10} more"
+    if not identities and not features:
+        result += "No identities or features found."
+    return result
+
+
+def _reply_xmpp_info_error(bot, msg, target, exc):
+    if isinstance(exc, slixmpp.exceptions.IqTimeout):
+        bot.reply(msg, f"🔴 Info request to {target} timed out.")
+        return
+
+    if isinstance(exc, slixmpp.exceptions.IqError):
+        err = exc.iq['error']
         err_condition = err.get('condition', 'unknown')
         if err_condition == "service-unavailable":
             bot.reply(msg, f"🔴 {target} does not support"
-                           " contact requests (XEP-0030).")
+                           " info requests (XEP-0030).")
         else:
-            bot.reply(msg, f"🔴 Contact request failed: {err_condition}")
-    except Exception as e:
-        bot.reply(msg, f"🔴 Error: {e}")
+            bot.reply(msg, f"🔴 Info request failed: {err_condition}")
+        return
+
+    bot.reply(msg, f"🔴 Error: {exc}")
 
 
 @command("xmpp info", role=Role.USER, aliases=["x info"])
@@ -494,49 +608,18 @@ async def cmd_xmpp_info(bot, sender_jid, nick, args, msg, is_room):
     if error:
         bot.reply(msg, f"❌ {error}")
         return
+
     # Always extract domain and notify if JID supplied
     target = inform_if_jid(msg, target, bot, "info")
+
     try:
         info = await bot.plugin["xep_0030"].get_info(jid=target, timeout=8)
         disco_info = info.get('disco_info', {})
-        identities = []
-        if 'identities' in disco_info:
-            for ident in disco_info['identities']:
-                if isinstance(ident, tuple) and len(ident) >= 2:
-                    category = ident[0]
-                    ident_type = ident[1]
-                    name = ident[2] if len(ident) > 2 else None
-                    ident_str = category
-                    if ident_type:
-                        ident_str += f"/{ident_type}"
-                    if name:
-                        ident_str += f" ({name})"
-                    identities.append(f"  • {ident_str}")
-        features = []
-        if 'features' in disco_info:
-            features = [f"  • {feature}" for feature in disco_info['features']]
-        result = f"🔍 Info for {target}:\n"
-        if identities:
-            result += "\n**Identities:**\n" + "\n".join(identities)
-        if features:
-            result += "\n**Features:**\n" + "\n".join(features[:10])
-            if len(features) > 10:
-                result += f"\n  ... and {len(features) - 10} more"
-        if not identities and not features:
-            result += "No identities or features found."
+        identities, features = _extract_xmpp_info_lines(disco_info)
+        result = _build_xmpp_info_result(target, identities, features)
         bot.reply(msg, result)
-    except slixmpp.exceptions.IqTimeout:
-        bot.reply(msg, f"🔴 Info request to {target} timed out.")
-    except slixmpp.exceptions.IqError as e:
-        err = e.iq['error']
-        err_condition = err.get('condition', 'unknown')
-        if err_condition == "service-unavailable":
-            bot.reply(msg, f"🔴 {target} does not support"
-                           " info requests (XEP-0030).")
-        else:
-            bot.reply(msg, f"🔴 Info request failed: {err_condition}")
     except Exception as e:
-        bot.reply(msg, f"🔴 Error: {e}")
+        _reply_xmpp_info_error(bot, msg, target, e)
 
 
 @command("xmpp ping", role=Role.USER, aliases=["x ping"])
@@ -579,6 +662,82 @@ async def cmd_xmpp_ping(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"🔴 Ping to {target} failed: {e}")
 
 
+def _reply_xmpp_srv_missing_domain(bot, msg):
+    bot.reply(msg, "❌ Missing domain\nUsage: {prefix}x srv <domain>")
+
+
+def _reply_xmpp_srv_invalid_domain(bot, msg, error_msg):
+    bot.reply(msg, f"❌ Invalid domain: {error_msg}")
+
+
+def _reply_xmpp_srv_jid_notice(bot, msg, domain, original):
+    bot.reply(msg, f"Note: 'srv' only works with domains."
+                   f" Using '{domain}' from '{original}'.")
+
+
+def _reply_xmpp_srv_dns_missing(bot, msg):
+    bot.reply(msg, "🔴 DNS library not installed. Install"
+                   " python-dnspython: pip install dnspython")
+
+
+def _collect_srv_records(domain, service, dns_resolver, dns_exception):
+    srv_name = f"{service}.{domain}"
+
+    try:
+        answers = dns_resolver.resolve(srv_name, 'SRV',
+                                       raise_on_no_answer=False)
+
+        if not answers:
+            return "❌ Not found"
+
+        records = []
+        for rdata in answers:
+            target = str(rdata.target).rstrip('.')
+            port = rdata.port
+            priority = rdata.priority
+            weight = rdata.weight
+            records.append({
+                'target': target,
+                'port': port,
+                'priority': priority,
+                'weight': weight
+            })
+
+        records.sort(key=lambda x: (x['priority'], -x['weight']))
+
+        formatted = []
+        for rec in records:
+            formatted.append(
+                f"{rec['target']}:{rec['port']} "
+                f"(priority={rec['priority']}, weight={rec['weight']})"
+            )
+
+        return "\n    ".join(formatted)
+
+    except dns_exception.DNSException as e:
+        return f"❌ Not found ({type(e).__name__})"
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+def _build_xmpp_srv_result(domain, services, srv_records):
+    result = f"🔍 DNS SRV records for **{domain}**:\n"
+    found_any = False
+
+    for service in services:
+        status = srv_records[service]
+        if "Not found" not in status and "Error" not in status:
+            found_any = True
+            result += f"\n**{service}:**\n    {status}"
+        else:
+            result += f"\n**{service}:** {status}"
+
+    if not found_any:
+        result += "\n\n⚠️ No SRV records found for this domain!"
+
+    return result
+
+
 @command("xmpp srv", role=Role.USER, aliases=["x srv"])
 async def cmd_xmpp_srv(bot, sender_jid, nick, args, msg, is_room):
     """
@@ -605,7 +764,7 @@ async def cmd_xmpp_srv(bot, sender_jid, nick, args, msg, is_room):
         return
 
     if not args or len(args) < 1:
-        bot.reply(msg, "❌ Missing domain\nUsage: {prefix}x srv <domain>")
+        _reply_xmpp_srv_missing_domain(bot, msg)
         return
 
     domain = get_domain_from_jid(args[0])
@@ -613,23 +772,20 @@ async def cmd_xmpp_srv(bot, sender_jid, nick, args, msg, is_room):
     # Validate domain
     is_valid, error_msg = _validate_domain(domain)
     if not is_valid:
-        bot.reply(msg, f"❌ Invalid domain: {error_msg}")
+        _reply_xmpp_srv_invalid_domain(bot, msg, error_msg)
         return
 
     if "@" in args[0]:
-        bot.reply(msg, f"Note: 'srv' only works with domains."
-                       f" Using '{domain}' from '{args[0]}'.")
+        _reply_xmpp_srv_jid_notice(bot, msg, domain, args[0])
 
     try:
         import dns.resolver
         import dns.exception
     except ImportError:
-        bot.reply(msg, "🔴 DNS library not installed. Install"
-                       " python-dnspython: pip install dnspython")
+        _reply_xmpp_srv_dns_missing(bot, msg)
         return
 
     try:
-        # Services to check
         services = [
             '_xmpp-client._tcp',
             '_xmpp-server._tcp',
@@ -638,63 +794,15 @@ async def cmd_xmpp_srv(bot, sender_jid, nick, args, msg, is_room):
         ]
 
         srv_records = {}
-
         for service in services:
-            srv_name = f"{service}.{domain}"
-            try:
-                answers = dns.resolver.resolve(srv_name, 'SRV',
-                                               raise_on_no_answer=False)
+            srv_records[service] = _collect_srv_records(
+                domain,
+                service,
+                dns.resolver,
+                dns.exception,
+            )
 
-                if not answers:
-                    srv_records[service] = "❌ Not found"
-                    continue
-
-                records = []
-                for rdata in answers:
-                    target = str(rdata.target).rstrip('.')
-                    port = rdata.port
-                    priority = rdata.priority
-                    weight = rdata.weight
-                    records.append({
-                        'target': target,
-                        'port': port,
-                        'priority': priority,
-                        'weight': weight
-                    })
-
-                # Sort by priority, then by weight
-                records.sort(key=lambda x: (x['priority'], -x['weight']))
-
-                # Format for display
-                formatted = []
-                for rec in records:
-                    formatted.append(
-                        f"{rec['target']}:{rec['port']} "
-                        f"(priority={rec['priority']}, weight={rec['weight']})"
-                    )
-
-                srv_records[service] = "\n    ".join(formatted)
-
-            except dns.exception.DNSException as e:
-                srv_records[service] = f"❌ Not found ({type(e).__name__})"
-            except Exception as e:
-                srv_records[service] = f"❌ Error: {e}"
-
-        # Build result
-        result = f"🔍 DNS SRV records for **{domain}**:\n"
-
-        found_any = False
-        for service in services:
-            status = srv_records[service]
-            if "Not found" not in status and "Error" not in status:
-                found_any = True
-                result += f"\n**{service}:**\n    {status}"
-            else:
-                result += f"\n**{service}:** {status}"
-
-        if not found_any:
-            result += "\n\n⚠️ No SRV records found for this domain!"
-
+        result = _build_xmpp_srv_result(domain, services, srv_records)
         bot.reply(msg, result)
 
     except Exception as e:
