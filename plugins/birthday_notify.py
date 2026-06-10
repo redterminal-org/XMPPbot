@@ -430,7 +430,7 @@ async def _check_user_birthday(bot, user_jid_str: str, nick: str, room_jid):
             nick,
         )
 
-        log.info(
+        log.debug(
             "[BIRTHDAY] Checking %s (%s) in room %s - birthday: %s",
             nick,
             user_jid_str,
