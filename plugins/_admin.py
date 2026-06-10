@@ -3,6 +3,14 @@ Admin management commands.
 
 This plugin exposes administrative commands for bot management,
 like restart, shutdown, and status monitoring.
+
+The bot restart command simply stops the bot, which is then restarted by
+the system's service functions.
+
+The bot shutdown command is built from the "stop_cmd" key in the config.json
+like this:
+"stop_cmd": ["/usr/bin/systemctl", "--user", "stop", "envsbot.service"]
+(This may be different for your setup and used init system)
 """
 
 import logging
@@ -202,7 +210,7 @@ async def bot_restart(bot, sender, nick, args, msg, is_room):
     Restart the entire bot process.
 
     Gracefully disconnects, closes the database, and restarts the bot
-    with the same command line arguments.
+    using the system's service functionality.
 
     Usage:
         {prefix}bot restart
@@ -252,11 +260,6 @@ async def bot_restart(bot, sender, nick, args, msg, is_room):
         log.error("[ADMIN] Error closing database: %s", e)
 
 
-    # Replace current process via execvp
-    # log.info("[ADMIN] ✅ Executing restart via os.execvp()")
-    # os.execvp(sys.executable, [sys.executable] + sys.argv)
-
-
 @command("bot shutdown", role=Role.OWNER, aliases=["shutdown"])
 async def bot_shutdown(bot, sender, nick, args, msg, is_room):
     """
@@ -265,6 +268,7 @@ async def bot_shutdown(bot, sender, nick, args, msg, is_room):
     Shuts down the bot using the "stop_cmd" list from the config file
     which builds the shutdown system command, for example:
     ["/usr/bin/systemctl", "--user", "stop", "envsbot.service"]
+    (This may be different for your setup and used system init system)
 
     Usage:
         {prefix}bot shutdown
@@ -282,27 +286,6 @@ async def bot_shutdown(bot, sender, nick, args, msg, is_room):
     log.info("[ADMIN] 🛑 Bot shutdown requested by %s", sender)
 
     subprocess.run(stop_cmd)
-
-    # Wait a moment to ensure the reply is sent
-    # await asyncio.sleep(0.5)
-
-    # Disconnect
-    # log.info("[ADMIN] Disconnecting...")
-    # bot.disconnect()
-
-    # Wait for disconnect with timeout
-    # try:
-        # await asyncio.wait_for(bot.disconnected, timeout=5)
-    # except asyncio.TimeoutError:
-        # log.warning("[ADMIN] Disconnect timeout")
-
-    # Close database
-    # try:
-        # await bot.db.close()
-    # except Exception as e:
-        # log.error("[ADMIN] Error closing database: %s", e)
-
-    # log.info("[ADMIN] ✅ Bot shutdown complete")
 
 
 @command("bot status", role=Role.ADMIN, aliases=["bot info"])
