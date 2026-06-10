@@ -28,6 +28,7 @@ OPTIONAL_CONFIG_TYPES = {
     "prefix": str,
     "loglevel": str,
     "db": str,
+    "stop_cmd": list,
     "admins": list,
     "avatar": str,
     "avatar_type": str,

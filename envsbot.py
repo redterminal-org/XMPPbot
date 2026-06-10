@@ -311,6 +311,10 @@ class Bot(slixmpp.ClientXMPP):
             return f"{nick}: {text}"
         return text
 
+    # ------------------------------
+    # bot.reply() method and helpers
+    # ------------------------------
+
     def _build_reply_message(self, msg, text, mention, thread, ephemeral):
         """
         Create the outbound message object for reply().

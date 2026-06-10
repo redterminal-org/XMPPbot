@@ -8,12 +8,12 @@ like restart, shutdown, and status monitoring.
 import logging
 import asyncio
 import os
-import sys
 import json
-import tempfile
+import subprocess
 import psutil
 from datetime import datetime
 from utils.command import command, Role
+from utils.config import config
 from plugins._core import (
     JOINED_ROOMS,
 )
@@ -29,10 +29,7 @@ PLUGIN_META = {
 }
 
 # Use a temp file to store restart notification data
-RESTART_NOTIFICATION_FILE = os.path.join(
-    tempfile.gettempdir(),
-    "bot_restart_notification.json"
-)
+RESTART_NOTIFICATION_FILE = "/tmp/bot_restart_notification.json"
 
 # Track bot start time
 BOT_START_TIME = None
@@ -220,19 +217,6 @@ async def bot_restart(bot, sender, nick, args, msg, is_room):
     log.info("[ADMIN] Initiating graceful shutdown...")
     bot.disconnect()
 
-    # Wait for disconnect with timeout
-    try:
-        await asyncio.wait_for(bot.disconnected, timeout=5)
-    except asyncio.TimeoutError:
-        log.warning(
-            "[ADMIN] Disconnect timeout - proceeding with restart anyway")
-
-    # Close database
-    try:
-        await bot.db.close()
-    except Exception as e:
-        log.error("[ADMIN] Error closing database: %s", e)
-
     # Store restart notification info to file
     notification_data = {
         "sender": str(sender),
@@ -254,36 +238,12 @@ async def bot_restart(bot, sender, nick, args, msg, is_room):
     except Exception as e:
         log.error("[ADMIN] Failed to save restart notification: %s", e)
 
-    # Replace current process via execvp
-    log.info("[ADMIN] ✅ Executing restart via os.execvp()")
-    os.execvp(sys.executable, [sys.executable] + sys.argv)
-
-
-@command("bot shutdown", role=Role.OWNER, aliases=["shutdown"])
-async def bot_shutdown(bot, sender, nick, args, msg, is_room):
-    """
-    Gracefully shutdown the bot.
-
-    Closes all connections and database connections cleanly.
-
-    Usage:
-        {prefix}bot shutdown
-    """
-    bot.reply(msg, "🛑 Bot shutting down...")
-    log.info("[ADMIN] 🛑 Bot shutdown requested by %s", sender)
-
-    # Wait a moment to ensure the reply is sent
-    await asyncio.sleep(0.5)
-
-    # Disconnect
-    log.info("[ADMIN] Disconnecting...")
-    bot.disconnect()
-
     # Wait for disconnect with timeout
     try:
         await asyncio.wait_for(bot.disconnected, timeout=5)
     except asyncio.TimeoutError:
-        log.warning("[ADMIN] Disconnect timeout")
+        log.warning(
+            "[ADMIN] Disconnect timeout - proceeding with restart anyway")
 
     # Close database
     try:
@@ -291,7 +251,58 @@ async def bot_shutdown(bot, sender, nick, args, msg, is_room):
     except Exception as e:
         log.error("[ADMIN] Error closing database: %s", e)
 
-    log.info("[ADMIN] ✅ Bot shutdown complete")
+
+    # Replace current process via execvp
+    # log.info("[ADMIN] ✅ Executing restart via os.execvp()")
+    # os.execvp(sys.executable, [sys.executable] + sys.argv)
+
+
+@command("bot shutdown", role=Role.OWNER, aliases=["shutdown"])
+async def bot_shutdown(bot, sender, nick, args, msg, is_room):
+    """
+    Gracefully shutdown the bot.
+
+    Shuts down the bot using the "stop_cmd" list from the config file
+    which builds the shutdown system command, for example:
+    ["/usr/bin/systemctl", "--user", "stop", "envsbot.service"]
+
+    Usage:
+        {prefix}bot shutdown
+    """
+    try:
+        stop_cmd = config["stop_cmd"]
+        if not stop_cmd:
+            raise KeyError
+    except KeyError:
+        bot.reply(msg, "🛑 No shutdown command provided in config file!")
+        log.info("[ADMIN] 🛑 Shutdown request failed. No shutdown command"
+                 " in config file provided.")
+        return
+    bot.reply(msg, "🛑 Bot shutting down...")
+    log.info("[ADMIN] 🛑 Bot shutdown requested by %s", sender)
+
+    subprocess.run(stop_cmd)
+
+    # Wait a moment to ensure the reply is sent
+    # await asyncio.sleep(0.5)
+
+    # Disconnect
+    # log.info("[ADMIN] Disconnecting...")
+    # bot.disconnect()
+
+    # Wait for disconnect with timeout
+    # try:
+        # await asyncio.wait_for(bot.disconnected, timeout=5)
+    # except asyncio.TimeoutError:
+        # log.warning("[ADMIN] Disconnect timeout")
+
+    # Close database
+    # try:
+        # await bot.db.close()
+    # except Exception as e:
+        # log.error("[ADMIN] Error closing database: %s", e)
+
+    # log.info("[ADMIN] ✅ Bot shutdown complete")
 
 
 @command("bot status", role=Role.ADMIN, aliases=["bot info"])
