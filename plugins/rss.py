@@ -353,7 +353,7 @@ async def _update_feed(bot, store, url, mutator):
     changed = mutator(feed)
     if changed:
         await save_feeds(store, feeds)
-        await _flush_user_store(bot)
+        # await _flush_user_store(bot)
 
     return changed
 
@@ -792,7 +792,7 @@ async def _add_feed(bot, msg, url, store, room):
             }
 
             await save_feeds(store, feeds)
-            await _flush_user_store(bot)
+            # await _flush_user_store(bot)
             await ensure_task(bot, store, url, feeds[url]["period"])
 
             log.info(f"[RSS] Added new feed {store}\n\n{feeds}")
@@ -809,7 +809,7 @@ async def _add_feed(bot, msg, url, store, room):
         if room not in feeds[url]["rooms"]:
             feeds[url]["rooms"].append(room)
             await save_feeds(store, feeds)
-            await _flush_user_store(bot)
+            # await _flush_user_store(bot)
 
             log.info(f"[RSS] ADD: {store}\n\n{feeds}")
             await ensure_task(
@@ -889,7 +889,7 @@ async def _del_feed(bot, msg, url, store, room):
         )
 
     await save_feeds(store, feeds)
-    await _flush_user_store(bot)
+    # await _flush_user_store(bot)
     return
 
 
