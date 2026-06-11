@@ -262,7 +262,7 @@ async def _mark_announced(bot, room_jid: str, user_jid: str, date_str: str):
     # Optional legacy key for visibility/backwards compatibility.
     await store.set(user_jid, "announced_date", date_str)
 
-    await bot.db.users.flush_all()
+    # await bot.db.users.flush_all()
 
 
 async def _get_cached_bday(bot, user_jid: str):
@@ -321,7 +321,7 @@ async def _set_cached_bday(bot, user_jid: str, birthday,
     }
 
     await store.set(str(user_jid), "cached_bday", payload)
-    await bot.db.users.flush_all()
+    # await bot.db.users.flush_all()
 
 
 async def _get_birthday_from_vcard(bot, room_jid, nick: str):
