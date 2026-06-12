@@ -514,6 +514,7 @@ async def seen_command(bot, sender_jid, nick, args, msg, is_room):
         target_show = context["target_show"]
         target_status = context["target_status"]
         target_emoji = context["target_emoji"]
+        target_show = target_show if target_show is not None else "online"
 
         if not target_jid:
             if bare_jid in JOINED_ROOMS:
