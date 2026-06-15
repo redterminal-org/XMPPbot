@@ -1,6 +1,7 @@
 import types
 import pytest
 
+from utils import plugin_manager
 from utils.plugin_manager import PluginManager
 
 
@@ -39,13 +40,13 @@ async def test_lifecycle_full_load_and_unload(monkeypatch):
     pm = PluginManager(bot=bot, package="fakepkg")
     mod = make_fake_plugin(meta={'name': 'p1'})
     # Patch import_module to always return our mod
-    monkeypatch.setattr("utils.plugin_manager.importlib.import_module",
+    monkeypatch.setattr(plugin_manager.importlib, "import_module",
                         lambda name: mod)
     # Patch iter_modules to simulate one plugin 'p1'
 
     class SimpleModule:
         name = "p1"
-    monkeypatch.setattr("utils.plugin_manager.pkgutil.iter_modules",
+    monkeypatch.setattr(plugin_manager.pkgutil, "iter_modules",
                         lambda path: [SimpleModule()])
     # Actually load and unload
     pm.meta['p1'] = {'name': 'p1'}
