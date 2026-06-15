@@ -1,4 +1,4 @@
-# envsbot [![Build Status](https://drone.envs.net/api/badges/dan/envsbot/status.svg)](https://drone.envs.net/dan/envsbot)
+# EnvsBot [![Build Status](https://drone.envs.net/api/badges/dan/envsbot/status.svg)](https://drone.envs.net/dan/envsbot)
 
 ---
 
@@ -15,17 +15,17 @@ Python required is &gt;=3.12
 
 ## 🌐 envs pubnix/tilde
 
-envsbot is developed with the **envs pubnix** environment in mind, but is not limited to it. It takes the tildebot IRC bot as model and hopefully will include all of its features and more (especially in XMPP groupchats and DMs).
+EnvsBot is developed with the **envs pubnix** environment in mind, but is not limited to it. It takes the tildebot IRC bot as model and hopefully will include all of its features and more (especially in XMPP groupchats and DMs).
 
 ---
 
 ## About
 
-envsbot is now in a usable state: the core framework is mostly stable, although probably not bug-free, supports dynamic plugin loading, and provides a structured command system. We are now developing new plugins and features on top of it.
+EnvsBot is now stable and is released under the `v1.2.0` tag, although you should use the most recent git version for bug fixes: the core framework is stable, although probably not bug-free (that's always an ongoing process), supports dynamic plugin loading, and provides a structured command system. These are some of the features for now:
 
 - Plugin-based architecture
 - Dynamic plugin loading/reloading
-- Command decorators
+- Command decorators to mark bot commands with name, minimum role and aliases
 - SQLite-backed database layer
 
 ---
@@ -89,7 +89,7 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 > Offline message plugin that stores messages for users and delivers them when they join the room again.
 
 ### **tools**
-> General utility plugin with commands like ping/pong, echo, time/date lookups by timezone, UTC display, and Unix timestamp conversion.
+> General utility plugin with commands like ping/pong, echo, time/date lookups by timezone, UTC display, and Unix timestamp conversion. Has also a "seen" command.
 
 ### **urlcheck**
 > URL metadata plugin that watches room messages for links and posts page titles, descriptions, file info, or YouTube metadata while avoiding duplicate spam.
@@ -101,7 +101,7 @@ Below is a complete list of Python plugins currently available in `plugins/`, ea
 > vCard lookup and profile plugin for retrieving public user profile information such as names, birthdays, URLs, organization, and location-related fields.
 
 ### **weather**
-> Weather plugin that shows current weather for a user's configured vCard location, usable in rooms, MUC DMs, or direct messages.
+> Weather plugin that shows current weather for a user's configured vCard location, usable in rooms, MUC PMs, or direct messages.
 
 ### **xkcd**
 > XKCD plugin that fetches latest, specific, random, or searched comics and can automatically post new comics to subscribed rooms.
@@ -145,6 +145,45 @@ Remember that the minimum version of Python is `Python3.12`.
 
 ---
 
+## Example Service File for systemd
+
+```ini
+description=EnvsBot XMPP Bot
+After=network-online.target prosody.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=envsbot
+Group=envsbot
+
+WorkingDirectory=/srv/envsbot/envsbot
+ExecStart=/srv/envsbot/envsbot/venv/bin/python /srv/envsbot/envsbot/envsbot.py
+
+Restart=always
+RestartSec=5s
+StartLimitIntervalSec=300
+StartLimitBurst=10
+# Needed to for restarts to correctly close the DB before starting again
+ExecStopPost=/usr/bin/sleep 5
+
+# Optional, but advisably:
+Environment=PYTHONUNBUFFERED=1
+
+# Logs go to journalctl if uncommented
+#StandardOutput=journal
+#StandardError=journal
+
+# Clean Exit
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
 ## TODO
 
 - [X] Plugin Management Plugin \[core\]
@@ -160,5 +199,4 @@ Remember that the minimum version of Python is `Python3.12`.
 
 ## License
 
-This project is licensed under the **GPL-3.0-only** License. See the [LICENSE](LICENSE) file for details. Future versions of the GPL License are explicitly
-
+This project is licensed under the **GPL-3.0-only** License. See the [LICENSE](LICENSE) file for details. Future versions of the GPL License are explicitly excluded.
