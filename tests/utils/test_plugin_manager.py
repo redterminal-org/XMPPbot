@@ -64,7 +64,8 @@ async def test_load_plugin_with_no_hooks(monkeypatch):
     pm = PluginManager(bot=bot)
     # Use safe no-op for hooks
     mod = make_fake_plugin(meta={'name': 'nohooks'}, has_hooks=False)
-    monkeypatch.setattr("utils.plugin_manager.importlib.import_module", lambda name: mod)
+    monkeypatch.setattr("utils.plugin_manager.importlib.import_module",
+                        lambda name: mod)
     pm.meta["nohooks"] = {'name': 'nohooks'}
     await pm.load("nohooks")
 
@@ -79,7 +80,8 @@ async def test_load_all_sorted(monkeypatch):
     }
     fake_modA = make_fake_plugin(meta={"name": "A"})
     fake_modB = make_fake_plugin(meta={"name": "B"})
-    monkeypatch.setattr("utils.plugin_manager.importlib.import_module", lambda name: fake_modA if "A" in name else fake_modB)
+    monkeypatch.setattr("utils.plugin_manager.importlib.import_module",
+                        lambda name: fake_modA if "A" in name else fake_modB)
     monkeypatch.setattr(pm, "discover", lambda: ["A", "B"])
     await pm.load_all()
     assert set(pm.plugins.keys()) == {"A", "B"}
@@ -94,7 +96,8 @@ async def test_reload_plugins(monkeypatch):
     pm.meta = {"A": {"name": "A"}, "B": {"name": "B"}}
     pm.plugins = {"A": modA, "B": modB}
     monkeypatch.setattr(pm, "discover", lambda: ["A", "B"])
-    monkeypatch.setattr("utils.plugin_manager.importlib.import_module", lambda name: modA if "A" in name else modB)
+    monkeypatch.setattr("utils.plugin_manager.importlib.import_module",
+                        lambda name: modA if "A" in name else modB)
     for name in ["A", "B"]:
         await pm.reload(name)
     assert set(pm.plugins.keys()) == {"A", "B"}
