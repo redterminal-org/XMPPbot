@@ -3,7 +3,7 @@ import asyncio
 import slixmpp
 from unittest.mock import patch, MagicMock, AsyncMock
 
-import envsbot
+import XMPPBot
 
 
 def noop(self):
@@ -19,9 +19,9 @@ class DummyFrom:
         self.resource = resource
 
 
-class ControlledBot(envsbot.Bot):
+class ControlledBot(XMPPBot.Bot):
     async def get_user_role(self, jid, room=None):
-        return envsbot.Role.USER
+        return XMPPBot.Role.USER
 
     def reply(self, msg, text, *args, **kwargs):
         print(f"[TEST DEBUG REPLY CALLED] text={text!r}")
@@ -45,21 +45,21 @@ def _check_no_mock_jid(val, path="jid"):
 @pytest.fixture
 def bot(monkeypatch):
     # Patch direct dependencies
-    monkeypatch.setattr(envsbot, "PresenceManager", MagicMock())
-    monkeypatch.setattr(envsbot, "PluginManager", MagicMock())
-    monkeypatch.setattr(envsbot, "TokenBucketRateLimiter", MagicMock())
-    monkeypatch.setattr(envsbot, "DatabaseManager", MagicMock())
-    monkeypatch.setattr(envsbot, "config", {
+    monkeypatch.setattr(XMPPBot, "PresenceManager", MagicMock())
+    monkeypatch.setattr(XMPPBot, "PluginManager", MagicMock())
+    monkeypatch.setattr(XMPPBot, "TokenBucketRateLimiter", MagicMock())
+    monkeypatch.setattr(XMPPBot, "DatabaseManager", MagicMock())
+    monkeypatch.setattr(XMPPBot, "config", {
                         "jid": "jid", "password": "pw", "prefix": ","})
-    monkeypatch.setattr(envsbot, "setup_logging", lambda: None)
+    monkeypatch.setattr(XMPPBot, "setup_logging", lambda: None)
 
-    with patch.object(envsbot.slixmpp.ClientXMPP,
+    with patch.object(XMPPBot.slixmpp.ClientXMPP,
                       "__init__", lambda self, jid, pw: None), \
-            patch.object(envsbot.slixmpp.ClientXMPP,
+            patch.object(XMPPBot.slixmpp.ClientXMPP,
                          "register_plugin", lambda self, *a, **k: None), \
-            patch.object(envsbot.slixmpp.ClientXMPP,
+            patch.object(XMPPBot.slixmpp.ClientXMPP,
                          "add_event_handler", lambda self, *a, **k: None), \
-            patch.object(envsbot.slixmpp.ClientXMPP,
+            patch.object(XMPPBot.slixmpp.ClientXMPP,
                          "make_message", lambda self, *a, **k:
                          MagicMock(send=MagicMock(return_value=None))):
         b = ControlledBot()
@@ -165,7 +165,7 @@ async def test_handle_command_unresolved_or_noperm(bot):
         "from": DummyFrom("room@conf", "sender"),
         "get": lambda k, d=None: None
     }
-    with patch("envsbot.resolve_command", return_value=(None, [])):
+    with patch("XMPPBot.resolve_command", return_value=(None, [])):
         replies = []
         bot.reply = lambda msg, text, * \
             a, **k: replies.append((msg, text, a, k))
@@ -179,8 +179,8 @@ async def test_handle_command_unresolved_or_noperm(bot):
         name = "test"
         handler = fakeDef
         role = 80
-    with patch("envsbot.resolve_command", return_value=(FakeCmd, [])), \
-            patch("envsbot.check_permission", return_value=False):
+    with patch("XMPPBot.resolve_command", return_value=(FakeCmd, [])), \
+            patch("XMPPBot.check_permission", return_value=False):
         replies = []
         bot.reply = lambda msg, text, * \
             a, **k: replies.append((msg, text, a, k))
@@ -203,9 +203,9 @@ async def test_handle_command_moderator_check(bot):
     class FakeCmd:
         name = "testcmd"
         handler = AsyncMock()
-        role = envsbot.Role.MODERATOR
-    with patch("envsbot.resolve_command", return_value=(FakeCmd, [])), \
-            patch("envsbot.check_permission", return_value=True):
+        role = XMPPBot.Role.MODERATOR
+    with patch("XMPPBot.resolve_command", return_value=(FakeCmd, [])), \
+            patch("XMPPBot.check_permission", return_value=True):
         bot._replies = []
         await bot.handle_command(",testcmd", "user@host", "nick", m, True)
         found = any(
@@ -228,8 +228,8 @@ async def test_handle_command_execution(bot):
         handler = AsyncMock(side_effect=lambda *a, **
                             k: handled.update(ok=True))
         role = 80
-    with patch("envsbot.resolve_command", return_value=(C, [])), \
-            patch("envsbot.check_permission", return_value=True):
+    with patch("XMPPBot.resolve_command", return_value=(C, [])), \
+            patch("XMPPBot.check_permission", return_value=True):
         await bot.handle_command(",mycmd foo", "user@host", None, m, False)
         assert handled["ok"]
 
@@ -237,10 +237,10 @@ async def test_handle_command_execution(bot):
         name = "badcmd"
         handler = AsyncMock(side_effect=Exception("fail"))
         role = 80
-    with patch("envsbot.resolve_command", return_value=(F, [])), \
-            patch("envsbot.check_permission", return_value=True), \
+    with patch("XMPPBot.resolve_command", return_value=(F, [])), \
+            patch("XMPPBot.check_permission", return_value=True), \
             patch.object(bot, "get_user_role",
-                         AsyncMock(return_value=envsbot.Role.OWNER)):
+                         AsyncMock(return_value=XMPPBot.Role.OWNER)):
         bot._replies = []
         await bot.handle_command(",badcmd", "user@host", None, m, False)
         # No assertion, just for coverage
@@ -259,8 +259,8 @@ async def test_send_restart_notification_room_and_private(bot, monkeypatch,
     }
     with open(notif_path, "w") as f:
         json.dump(notif, f)
-    monkeypatch.setattr(envsbot.os.path, "exists", lambda fn: fn == notif_path)
-    monkeypatch.setattr(envsbot.os, "remove", lambda fn: None)
+    monkeypatch.setattr(XMPPBot.os.path, "exists", lambda fn: fn == notif_path)
+    monkeypatch.setattr(XMPPBot.os, "remove", lambda fn: None)
     open_real = open
     monkeypatch.setattr("builtins.open", lambda fn,
                         mode="r": open_real(notif_path, mode))
@@ -282,13 +282,13 @@ async def test_send_restart_notification_room_and_private(bot, monkeypatch,
 
 
 def test_get_latest_git_tag(monkeypatch):
-    monkeypatch.setattr(envsbot.subprocess, "check_output",
+    monkeypatch.setattr(XMPPBot.subprocess, "check_output",
                         lambda *a, **k: b"v1.2.3\n")
-    assert envsbot.get_latest_git_tag() == "v1.2.3"
+    assert XMPPBot.get_latest_git_tag() == "v1.2.3"
     def raise_cpe(
-        *a, **k): raise envsbot.subprocess.CalledProcessError(1, "git")
-    monkeypatch.setattr(envsbot.subprocess, "check_output", raise_cpe)
-    assert envsbot.get_latest_git_tag() is None
+        *a, **k): raise XMPPBot.subprocess.CalledProcessError(1, "git")
+    monkeypatch.setattr(XMPPBot.subprocess, "check_output", raise_cpe)
+    assert XMPPBot.get_latest_git_tag() is None
 
 
 def test_main_copy_behavior(monkeypatch, tmp_path):
@@ -297,37 +297,37 @@ def test_main_copy_behavior(monkeypatch, tmp_path):
     source.write_text("hello, world\n")
     called = {}
 
-    # Patch os.path.exists so envsbot logic matches file expectations
-    monkeypatch.setattr(envsbot.os.path, "exists", lambda path: str(
+    # Patch os.path.exists so XMPPBot logic matches file expectations
+    monkeypatch.setattr(XMPPBot.os.path, "exists", lambda path: str(
         path).endswith("init_chat_slang.csv"))
     # Patch shutil.copyfile to mark when called and simulate a copy
-    monkeypatch.setattr(envsbot.shutil, "copyfile", lambda s,
+    monkeypatch.setattr(XMPPBot.shutil, "copyfile", lambda s,
                         t: target.write_text(source.read_text()))
     # Patch logger methods to record messages
-    monkeypatch.setattr(envsbot.log, "info", lambda *a, **
+    monkeypatch.setattr(XMPPBot.log, "info", lambda *a, **
                         k: called.setdefault("info", True))
-    monkeypatch.setattr(envsbot.log, "warning", lambda *a,
+    monkeypatch.setattr(XMPPBot.log, "warning", lambda *a,
                         **k: called.setdefault("warning", True))
-    monkeypatch.setattr(envsbot.log, "error", lambda *a, **
+    monkeypatch.setattr(XMPPBot.log, "error", lambda *a, **
                         k: called.setdefault("error", True))
 
-    # Simulate the file copy block as in envsbot.py's __main__ logic
-    if (envsbot.os.path.exists("init_chat_slang.csv")
-            and not envsbot.os.path.exists("chat_slang.csv")):
+    # Simulate the file copy block as in XMPPBot.py's __main__ logic
+    if (XMPPBot.os.path.exists("init_chat_slang.csv")
+            and not XMPPBot.os.path.exists("chat_slang.csv")):
         try:
-            envsbot.shutil.copyfile("init_chat_slang.csv", "chat_slang.csv")
-            envsbot.log.info(
+            XMPPBot.shutil.copyfile("init_chat_slang.csv", "chat_slang.csv")
+            XMPPBot.log.info(
                 "[INIT] ✅ Copied init_chat_slang.csv to chat_slang.csv")
         except Exception as e:
-            envsbot.log.error(
+            XMPPBot.log.error(
                 f"[INIT] 🔴 Failed to copy init_chat_slang.csv to"
                 f" chat_slang.csv: {e}")
-    elif not envsbot.os.path.exists("init_chat_slang.csv"):
-        envsbot.log.warning(
+    elif not XMPPBot.os.path.exists("init_chat_slang.csv"):
+        XMPPBot.log.warning(
             "[INIT] 🔴 Source file init_chat_slang.csv not found."
             " Skipping copy.")
     else:
-        envsbot.log.info(
+        XMPPBot.log.info(
             "[INIT] ✅ Target file chat_slang.csv already exists."
             " Skipping copy.")
 

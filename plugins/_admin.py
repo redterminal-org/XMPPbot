@@ -9,7 +9,7 @@ the system's service functions.
 
 The bot shutdown command is built from the "stop_cmd" key in the config.json
 like this:
-"stop_cmd": ["/usr/bin/systemctl", "--user", "stop", "envsbot.service"]
+"stop_cmd": ["/usr/bin/systemctl", "--user", "stop", "XMPPBot.service"]
 (This may be different for your setup and used init system)
 """
 
@@ -267,7 +267,7 @@ async def bot_shutdown(bot, sender, nick, args, msg, is_room):
 
     Shuts down the bot using the "stop_cmd" list from the config file
     which builds the shutdown system command, for example:
-    ["/usr/bin/systemctl", "--user", "stop", "envsbot.service"]
+    ["/usr/bin/systemctl", "--user", "stop", "XMPPBot.service"]
     (This may be different for your setup and used system init system)
 
     Usage:

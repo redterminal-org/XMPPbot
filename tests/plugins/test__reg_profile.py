@@ -80,14 +80,14 @@ def test_build_vcard_basic_and_nested():
     card = FakeCard()
     data = {
         "FN": "Test Bot",
-        "NICKNAME": "envsbot",
+        "NICKNAME": "XMPPBot",
         "ADR": {"COUNTRY": "Wonderland", "CITY": "Imaginaria"},
     }
 
     _reg_profile.build_vcard(card, data)
 
     assert card["FN"] == "Test Bot"
-    assert card["NICKNAME"] == "envsbot"
+    assert card["NICKNAME"] == "XMPPBot"
     assert isinstance(card["ADR"], dict)
     assert card["ADR"]["COUNTRY"] == "Wonderland"
     assert card["ADR"]["CITY"] == "Imaginaria"

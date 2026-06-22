@@ -1,7 +1,7 @@
 # plugins/core.py
 
 """
-Core utility and shared helpers for all envsbot plugins.
+Core utility and shared helpers for all XMPPBot plugins.
 Depends on essential plugins (e.g., "rooms") via PLUGIN_META.
 
 Put any functions or objects here that:

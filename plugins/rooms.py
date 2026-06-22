@@ -200,7 +200,7 @@ async def on_load(bot):
             raw_nick = (data.get("nick")
                         or db_nick
                         or config.get("nick")
-                        or "envsbot")
+                        or "XMPPBot")
             nick = str(raw_nick)
 
             # Use runtime state if available, fallback to DB

@@ -29,7 +29,7 @@ def test_load_config_loads_json(tmp_path, monkeypatch):
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "prefix": ";",
         "loglevel": "DEBUG",
         "custom": "extra",
@@ -104,7 +104,7 @@ def test_validate_startup_config_accepts_valid_config():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "prefix": ",",
         "loglevel": "INFO",
         "db": "bot.db",
@@ -128,7 +128,7 @@ def test_validate_startup_config_rejects_empty_required_strings(key, value,
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
     }
     cfg[key] = value
 
@@ -143,7 +143,7 @@ def test_validate_config_rejects_invalid_loglevel():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "loglevel": "VERBOSE",
     }
 
@@ -158,7 +158,7 @@ def test_validate_config_rejects_invalid_avatar_type():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "avatar_type": "image/gif",
     }
 
@@ -173,7 +173,7 @@ def test_validate_config_rejects_invalid_admins_type():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "admins": "admin@example.org",
     }
 
@@ -188,7 +188,7 @@ def test_validate_config_rejects_invalid_admin_entry():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "admins": ["admin@example.org", ""],
     }
 
@@ -203,7 +203,7 @@ def test_validate_config_rejects_wrong_optional_types():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "rss_global_query_interval": "1200",
         "max_new_feed_entries": "5",
     }
@@ -231,7 +231,7 @@ def test_setup_logging_creates_log_dir_and_file(tmp_path, monkeypatch):
     monkeypatch.setattr(config_mod, "config", {"loglevel": "WARNING"})
 
     log_dir = tmp_path / "logs"
-    log_file = log_dir / "envsbot.log"
+    log_file = log_dir / "XMPPBot.log"
 
     if log_dir.exists():
         for f in log_dir.iterdir():
@@ -255,7 +255,7 @@ def test_validate_startup_config_rejects_invalid_bot_jid():
         "jid": "not-a-jid",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
     }
 
     with pytest.raises(config_mod.ConfigError) as exc:
@@ -269,7 +269,7 @@ def test_validate_startup_config_rejects_invalid_owner_jid():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "not-a-jid",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
     }
 
     with pytest.raises(config_mod.ConfigError) as exc:
@@ -283,7 +283,7 @@ def test_validate_config_rejects_invalid_admin_jid():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "admins": ["admin@example.org", "not-a-jid"],
     }
 
@@ -298,7 +298,7 @@ def test_validate_config_accepts_host_and_port():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "host": "xmpp.example.org",
         "port": 5222,
     }
@@ -311,7 +311,7 @@ def test_validate_config_rejects_invalid_host_type():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "host": 123,
     }
 
@@ -326,7 +326,7 @@ def test_validate_config_rejects_invalid_port_type():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "port": "5222",
     }
 
@@ -342,7 +342,7 @@ def test_validate_config_rejects_invalid_port_range(port):
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "port": port,
     }
 
@@ -357,7 +357,7 @@ def test_validate_config_rejects_invalid_timezone():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "timezone": "Mars/Olympus_Mons",
     }
 
@@ -372,7 +372,7 @@ def test_validate_config_accepts_valid_timezone():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "timezone": "Europe/Berlin",
     }
 
@@ -384,7 +384,7 @@ def test_validate_config_rejects_non_positive_rss_interval():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "rss_global_query_interval": 0,
     }
 
@@ -400,7 +400,7 @@ def test_validate_config_rejects_negative_max_new_feed_entries():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "max_new_feed_entries": -1,
     }
 
@@ -415,7 +415,7 @@ def test_validate_config_accepts_zero_max_new_feed_entries():
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "max_new_feed_entries": 0,
     }
 
@@ -457,7 +457,7 @@ def test_validate_startup_config_prints_avatar_warnings(tmp_path, monkeypatch,
         "jid": "bot@example.org",
         "password": "secret",
         "owner": "owner@example.org",
-        "nick": "envsbot",
+        "nick": "XMPPBot",
         "avatar": "missing.png",
         "avatar_type": "image/png",
     }

@@ -182,7 +182,7 @@ def check_optional_keys(cfg):
 
 def validate_config(cfg, require_required_keys=False):
     """
-    Validate envsbot configuration.
+    Validate XMPPBot configuration.
 
     Parameters
     ----------
@@ -286,7 +286,7 @@ def validate_startup_config(cfg=None):
     """
     Validate the effective runtime config before starting the bot.
 
-    This should be called by envsbot.py before Bot() is constructed so
+    This should be called by XMPPBot.py before Bot() is constructed so
     configuration mistakes produce a clear error instead of a restart loop.
     """
     if cfg is None:
@@ -321,7 +321,7 @@ def setup_logging():
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
 
-    log_file = log_dir / "envsbot.log"
+    log_file = log_dir / "XMPPBot.log"
 
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"

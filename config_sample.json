@@ -22,7 +22,7 @@
 
   "_comment4": "The 'db' key holds the name of the database file. It will be stored in the bots main directory you cloned. The 'stop_cmd' is a list of the parts (strings) the stop command is created from (for bot shutdown).",
   "db": "bot.db",
-  "stop_cmd": ["/usr/bin/systemctl", "--user", "stop", "envsbot.service"],
+  "stop_cmd": ["/usr/bin/systemctl", "--user", "stop", "XMPPBot.service"],
 
   "_comment5": "Your YouTube API key for getting Information about Videos with the urlcheck plugin about videos.",
   "youtube_api_key": "<your_youtube_api_key>",

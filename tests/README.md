@@ -1,6 +1,6 @@
-# envsbot Test Suite
+# XMPPBot Test Suite
 
-This directory contains tests for the envsbot project.
+This directory contains tests for the XMPPBot project.
 
 ## Structure
 

@@ -283,7 +283,7 @@ def _get_feed_headers() -> dict[str, str]:
     """Get HTTP headers for feed requests."""
     accept = "application/rss+xml, application/atom+xml, application/json, */*"
     return {
-        "User-Agent": "envsbot/1.0 +https://github.com/envs/envsbot",
+        "User-Agent": "XMPPBot/1.0 +https://github.com/envs/XMPPBot",
         "Accept": accept,
     }
 

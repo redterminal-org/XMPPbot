@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "envsbot"
+name = "XMPPBot"
 version = "1.2.0"
 description = "A modular plugin-driven XMPP bot framework"
 readme = "README.md"

@@ -1,32 +1,8 @@
-# EnvsBot [![Build Status](https://drone.envs.net/api/badges/dan/envsbot/status.svg)](https://drone.envs.net/dan/envsbot)
-
+# XMPPBot
 ---
 
 A modular XMPP bot built with Python 3 and slixmpp. The minimum version of
 Python required is &gt;=3.12
-
----
-
-**Mirrors:**
-- https://git.envs.net/dan/envsbot
-- https://github.com/dan-envs/envsbot
-
----
-
-## 🌐 envs pubnix/tilde
-
-EnvsBot is developed with the **envs pubnix** environment in mind, but is not limited to it. It takes the tildebot IRC bot as model and hopefully will include all of its features and more (especially in XMPP groupchats and DMs).
-
----
-
-## About
-
-EnvsBot is now stable and is released under the `v1.2.0` tag, although you should use the most recent git version for bug fixes: the core framework is stable, although probably not bug-free (that's always an ongoing process), supports dynamic plugin loading, and provides a structured command system. These are some of the features for now:
-
-- Plugin-based architecture
-- Dynamic plugin loading/reloading
-- Command decorators to mark bot commands with name, minimum role and aliases
-- SQLite-backed database layer
 
 ---
 
@@ -116,8 +92,8 @@ Remember that the minimum version of Python is `Python3.12`.
 
 1. **Clone the repository:**
    ```sh
-   git clone https://github.com/yourusername/envsbot.git
-   cd envsbot
+   git clone https://github.com/redterminal-org/XMPPBot.git
+   cd XMPPBot
    ```
 
 2. **Create a virtual environment (recommended):**
@@ -140,7 +116,7 @@ Remember that the minimum version of Python is `Python3.12`.
 
 6. **Run the bot:**
    ```sh
-   python envsbot.py
+   python XMPPBot.py
    ```
 
 ---
@@ -148,17 +124,17 @@ Remember that the minimum version of Python is `Python3.12`.
 ## Example Service File for systemd
 
 ```ini
-description=EnvsBot XMPP Bot
-After=network-online.target prosody.service
+description=XMPPBot XMPP Bot
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=envsbot
-Group=envsbot
+User=XMPPBot
+Group=XMPPBot
 
-WorkingDirectory=/srv/envsbot/envsbot
-ExecStart=/srv/envsbot/envsbot/venv/bin/python /srv/envsbot/envsbot/envsbot.py
+WorkingDirectory=/srv/XMPPBot/XMPPBot
+ExecStart=/srv/XMPPBot/XMPPBot/venv/bin/python /srv/XMPPBot/XMPPBot/XMPPBot.py
 
 Restart=always
 RestartSec=5s

@@ -10,8 +10,8 @@ VCARD = """<vCard xmlns=\"vcard-temp\">
     <ORGUNIT>XMPP server</ORGUNIT>
   </ORG>
   <EMAIL><USERID>admin@example.tld</USERID></EMAIL>
-  <URL>https://git.envs.net/dan/envsbot</URL>
-  <URL>https://github.com/dan-envs/envsbot</URL>
+  <URL>https://git.envs.net/dan/XMPPBot</URL>
+  <URL>https://github.com/dan-envs/XMPPBot</URL>
   <URL>https://your.home.page/</URL>
   <ADR>
     <LOCALITY>Anchorage</LOCALITY>

@@ -232,7 +232,7 @@ def fetch_wikipedia_summary(term):
     Query the Wikipedia REST API and return extracted data, or None on error.
     """
     url = WIKIPEDIA_API_URL.format(requests.utils.quote(term))
-    resp = requests.get(url, headers={"User-Agent": "envsbot/1.0"})
+    resp = requests.get(url, headers={"User-Agent": "XMPPBot/1.0"})
     if resp.status_code == 200:
         data = resp.json()
         title = data.get("title")
